@@ -22,6 +22,36 @@ function dn4Band(raw){
 }
 function pillHtml(band){ return `<span class="pill" style="color:${band.txt};background:${band.bg}">${band.label}</span>`; }
 
+function renderItemDetail(k, r){
+ const q = QUESTIONNAIRES[k];
+ const ans = r.rawAnswers;
+ if(!ans) return '<p class="sub" style="margin:6px 0;">Sem detalhe item a item disponível.</p>';
+ let rows = [];
+ if(q.type==='sections'){
+  rows = q.data.map((sec,i)=>{
+   const [domain, opts] = sec;
+   const v = ans[i];
+   const txt = (v!==null && v!==undefined) ? opts[v] : '<span style="color:var(--muted)">não respondido</span>';
+   return `<div style="padding:9px 0;border-bottom:1px dashed var(--line);"><div style="font-weight:600;font-size:13px;">${domain}</div><div style="font-size:13px;color:var(--ink);margin-top:2px;">${txt}</div></div>`;
+  });
+ } else if(q.type==='likert'){
+  rows = q.items.map((item,i)=>{
+   const opts = q.optsPerItem ? q.optsPerItem[i] : q.opts;
+   const v = ans[i];
+   const txt = (v!==null && v!==undefined) ? opts[v] : '<span style="color:var(--muted)">não respondido</span>';
+   return `<div style="padding:9px 0;border-bottom:1px dashed var(--line);"><div style="font-size:13px;color:var(--muted);">${item}</div><div style="font-size:13px;font-weight:600;margin-top:2px;">${txt}</div></div>`;
+  });
+ } else if(q.type==='yesno'){
+  rows = q.items.map((item,i)=>{
+   const v = ans[i];
+   const txt = (v===1) ? 'Sim' : (v===0 ? 'Não' : '<span style="color:var(--muted)">não respondido</span>');
+   return `<div style="padding:9px 0;border-bottom:1px dashed var(--line);display:flex;justify-content:space-between;gap:14px;"><div style="font-size:13px;">${item}</div><div style="font-size:13px;font-weight:600;white-space:nowrap;">${txt}</div></div>`;
+  });
+ }
+ if(!rows.length) return '';
+ return `<div style="margin-top:6px;padding-top:2px;">${rows.join('')}</div>`;
+}
+
 /* ---------- Dados dos instrumentos ---------- */
 const ODI_SECTIONS = [
  ["Intensidade da dor",[
@@ -241,26 +271,36 @@ const RMDQ_ITEMS = [
 
 const QUESTIONNAIRES = {
  odi: { title:"Índice de Incapacidade de Oswestry (ODI)", short:"ODI · coluna lombar", type:"sections", data:ODI_SECTIONS,
+  intro:"Estas perguntas são sobre a parte de baixo das suas costas (a coluna lombar) e como a dor atrapalha o seu dia a dia. Escolha a frase que mais parece com a sua situação hoje — não existe resposta certa ou errada.",
   score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*5))*100:0, raw:sum, n:a.length}; } },
  ndi: { title:"Índice de Incapacidade Cervical (NDI)", short:"NDI · coluna cervical", type:"sections", data:NDI_SECTIONS,
+  intro:"Estas perguntas são sobre o seu pescoço e como a dor atrapalha o seu dia a dia. Escolha a frase que mais parece com a sua situação hoje.",
   score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*5))*100:0, raw:sum, n:a.length}; } },
  tsk13: { title:"Escala Tampa de Cinesiofobia (TSK-13)", short:"TSK-13 · medo do movimento", type:"likert", items:TSK13_ITEMS, opts:TSK13_OPTS,
+  intro:"Estas perguntas não são sobre a dor em si — são sobre o que passa pela sua cabeça quando pensa em se movimentar ou fazer esforço. Responda com o que faz mais sentido pra você, sem pensar demais.",
   score(answers){ let sum=0,n=0; answers.forEach((v,i)=>{ if(v!==null&&v!==undefined){ n++; const val=v+1; sum += TSK13_REVERSE.includes(i)?(5-val):val; }}); return {pct:n?((sum-n)/(n*3))*100:0, raw:sum, n}; } },
  quickdash: { title:"QuickDASH (função do membro superior)", short:"QuickDASH · membro superior", type:"likert",
   items:QUICKDASH_ITEMS.map(i=>i[0]), optsPerItem:QUICKDASH_ITEMS.map(i=>i[1]),
+  intro:"Estas perguntas são sobre dificuldades para usar o braço, o ombro ou a mão em tarefas simples do dia a dia.",
   score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); if(!a.length) return {pct:0,raw:0,n:0}; const sum=a.reduce((s,v)=>s+(v+1),0); const mean=sum/a.length; return {pct:((mean-1)/4)*100, raw:sum, n:a.length}; } },
  whodas: { title:"WHODAS 2.0 (12 itens) — funcionalidade geral", short:"WHODAS 2.0 · funcionalidade global", type:"likert", items:WHODAS_ITEMS, opts:WHODAS_OPTS,
+  intro:"Estas perguntas são sobre o quanto seu problema de saúde dificulta atividades do seu dia a dia, de forma mais geral.",
   score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
  eva: { title:"Escala Visual Analógica de Dor (EVA)", short:"EVA · dor em 4 condições", type:"sliders",
   items:["Repouso (agora)","Pior momento do dia","Melhor momento do dia","Sob simulação de demanda laboral"],
+  intro:"Agora vamos medir sua dor numa régua de 0 a 10, em momentos diferentes. 0 é sem dor nenhuma, 10 é a pior dor que você já sentiu na vida.",
   score(answers){ return {answers}; } },
  dn4: { title:"DN4 — versão entrevista (dor neuropática)", short:"DN4 · qualidade da dor", type:"yesno", items:DN4_ITEMS,
+  intro:"Estas perguntas são sobre como é a sensação da sua dor (se ela parece queimação, choque, formigamento, e coisas do tipo). Responda Sim ou Não pro que você realmente sente.",
   score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:0, raw:sum, n:a.length}; } },
  fabq: { title:"FABQ — subescala trabalho", short:"FABQ-trabalho · medo-evitação", type:"likert", items:FABQ_TRABALHO_ITEMS, opts:FABQ_OPTS,
+  intro:"Estas perguntas são sobre a sua opinião a respeito do seu trabalho e da sua dor — não é sobre o que você sente no corpo, é sobre o que você pensa e acredita.",
   score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*6))*100:0, raw:sum, n:a.length}; } },
  pcs: { title:"PCS (Pain Catastrophizing Scale)", short:"PCS · catastrofização da dor", type:"likert", items:PCS_ITEMS, opts:PCS_OPTS,
+  intro:"Estas perguntas são sobre os pensamentos que passam pela sua cabeça quando você sente dor. Não existe resposta certa ou errada, responda com o que é mais parecido com você.",
   score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
  rmdq: { title:"Roland-Morris (RMDQ)", short:"RMDQ · incapacidade lombar leve-moderada", type:"yesno", items:RMDQ_ITEMS,
+  intro:"Estas são frases sobre o seu dia a dia por causa da dor na coluna. Marque Sim se a frase descreve como você está hoje, ou Não se ela não descreve.",
   score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/a.length)*100:0, raw:sum, n:a.length}; } }
 };
 const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq"];
@@ -316,7 +356,8 @@ async function dbGetAssignment(id){
 }
 
 /* ---------- App state ---------- */
-let state = { view:'landing', patientId:null, patientName:'', responsesLocal:{}, qKey:null, qIndex:0, qAnswers:[], patients:[], openPatient:null, authError:'' };
+let state = { view:'landing', patientId:null, patientName:'', responsesLocal:{}, qKey:null, qIndex:0, qAnswers:[], patients:[], openPatient:null, authError:'', openDetails:{} };
+let justDoneTimer = null;
 const app = document.getElementById('app');
 function render(){ app.innerHTML = views[state.view](); bind(); }
 
@@ -388,6 +429,7 @@ wizard(){
  return `
  <div class="topbar"><div class="brand">${q.title}<small>${state.qIndex+1} de ${total}</small></div></div>
  <main>
+  ${state.qIndex===0 && q.intro ? `<div class="card" style="background:var(--bg);border-style:dashed;font-size:14px;color:var(--muted);line-height:1.5;">${q.intro}</div>` : ''}
   <div class="arcwrap">${arc}<div class="arc-label">${pct}% concluído</div></div>
   ${body}
   <div class="navrow">
@@ -395,6 +437,23 @@ wizard(){
    <button class="btn btn-primary" id="nextBtn" ${state.qAnswers[state.qIndex]===null||state.qAnswers[state.qIndex]===undefined?'disabled':''}>${state.qIndex===total-1?'Concluir':'Próxima'}</button>
   </div>
  </main>`;
+},
+
+justDone(){
+ const keys = state.assignedKeys || QORDER;
+ const remaining = keys.filter(k=>!state.responsesLocal[k]);
+ const next = remaining[0];
+ return `<div class="topbar"><div class="brand">Gabriel dos Santos<small>Avaliação Funcional</small></div></div>
+ <main><div class="center-msg">
+   <h1>Respondido com sucesso ✓</h1>
+   ${next ? `
+     <p class="sub">Muito bem! Agora vamos para o próximo: <strong>${QUESTIONNAIRES[next].title}</strong>.</p>
+     <button class="btn btn-primary" id="nextQBtn">Continuar agora</button>
+     <button class="btn btn-ghost" id="seeListBtn" style="width:100%;margin-top:10px;">Ver lista completa</button>
+   ` : `
+     <p class="sub">Você concluiu todos os questionários. Obrigado! Só um instante...</p>
+   `}
+ </div></main>`;
 },
 
 thanks(){
@@ -456,13 +515,23 @@ dashboard(){
     if(k==='fabq'){ detail += ` · ${r.raw}/42 pontos (corte usual: ≥34, alto medo-evitação)`; }
     if(k==='rmdq'){ detail += ` · ${r.raw}/24 itens marcados`; }
    }
-   return `<div class="score-line">
-     <div><div class="sname">${qdef.title}</div>${k==='eva'?`<div style="margin-top:6px;">${detail}</div>`:`<div class="sdetail">${detail}</div>`}</div>
-     <div>${pillsHtml}</div></div>`;
+   const detailKey = p.id+'::'+k;
+   const isOpen = !!state.openDetails[detailKey];
+   const canExpand = (k!=='eva');
+   return `<div class="score-line" style="flex-direction:column;align-items:stretch;">
+     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+       <div><div class="sname">${qdef.title}</div>${k==='eva'?`<div style="margin-top:6px;">${detail}</div>`:`<div class="sdetail">${detail}</div>`}</div>
+       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+         ${pillsHtml}
+         ${canExpand?`<button class="del-link" style="color:var(--blue);" data-toggledetail="${detailKey}">${isOpen?'ocultar':'ver respostas'}</button>`:''}
+       </div>
+     </div>
+     ${(canExpand && isOpen) ? renderItemDetail(k, r) : ''}
+   </div>`;
   }).join('') || `<p class="sub" style="margin:12px 0;">Nenhum questionário respondido ainda.</p>`;
   return `<div class="patient-row">
     <div class="patient-head" data-toggle="${p.id}">
-      <div><div class="patient-name">${p.name}</div><div class="patient-meta">${new Date(p.created_at).toLocaleString('pt-BR')} · ${keys.length}/6 questionários</div></div>
+      <div><div class="patient-name">${p.name}</div><div class="patient-meta">${new Date(p.created_at).toLocaleString('pt-BR')} · ${keys.length}/${(p.assigned && p.assigned.length) ? p.assigned.length : QORDER.length} questionários</div></div>
       <button class="del-link" data-del="${p.id}">excluir</button>
     </div>
     <div class="patient-body ${open?'open':''}">${inner}</div>
@@ -510,6 +579,7 @@ function arcSvg(pct){
 /* ---------- Bindings & fluxo ---------- */
 function bind(){
  const $ = (id)=>document.getElementById(id);
+ if(justDoneTimer){ clearTimeout(justDoneTimer); justDoneTimer=null; }
 
  if(state.view==='landing'){
   $('toAdmin').onclick = ()=>{ state.view='adminGate'; render(); };
@@ -558,8 +628,29 @@ function bind(){
    state.responsesLocal[state.qKey] = result;
    $('nextBtn').disabled = true; $('nextBtn').textContent='Salvando...';
    await dbSaveResponses(state.patientId, state.responsesLocal);
-   state.view='list'; render();
+   state.view='justDone'; render();
   };
+ }
+
+ if(state.view==='justDone'){
+  const keys = state.assignedKeys || QORDER;
+  const remaining = keys.filter(k=>!state.responsesLocal[k]);
+  const next = remaining[0];
+  if(next){
+   const goNext = ()=>{
+    if(justDoneTimer){ clearTimeout(justDoneTimer); justDoneTimer=null; }
+    state.qKey = next; state.qIndex = 0;
+    const q2 = QUESTIONNAIRES[next];
+    const len2 = q2.type==='sections'? q2.data.length : q2.items.length;
+    state.qAnswers = new Array(len2).fill(null);
+    state.view='wizard'; render();
+   };
+   $('nextQBtn').onclick = goNext;
+   $('seeListBtn').onclick = ()=>{ if(justDoneTimer){ clearTimeout(justDoneTimer); justDoneTimer=null; } state.view='list'; render(); };
+   justDoneTimer = setTimeout(goNext, 2600);
+  } else {
+   justDoneTimer = setTimeout(()=>{ state.view='thanks'; render(); }, 2200);
+  }
  }
 
  if(state.view==='adminGate'){
@@ -614,6 +705,14 @@ function bind(){
     if(!confirm('Excluir todas as respostas deste paciente?')) return;
     await dbDelete(el.dataset.del);
     state.patients = await dbListAll();
+    render();
+   };
+  });
+  document.querySelectorAll('[data-toggledetail]').forEach(el=>{
+   el.onclick = (e)=>{
+    e.stopPropagation();
+    const key = el.dataset.toggledetail;
+    state.openDetails[key] = !state.openDetails[key];
     render();
    };
   });
