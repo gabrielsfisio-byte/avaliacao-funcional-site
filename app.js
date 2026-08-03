@@ -198,15 +198,14 @@ function newUuid(){
 }
 async function dbCreatePatient(name, phone){
  const id = newUuid();
- const {error, count} = await supabase.from('submissions').insert({id, name, phone, responses:{}}, {count:'exact'});
+ const {error} = await supabase.from('submissions').insert({id, name, phone, responses:{}});
  if(error){ alert('Erro ao criar registro: '+error.message); throw error; }
- alert('Diagnóstico: paciente criado com id '+id+' — linhas inseridas: '+count);
  return id;
 }
 async function dbSaveResponses(id, responses){
- const {error, count} = await supabase.from('submissions').update({responses}, {count:'exact'}).eq('id', id);
+ const {data, error} = await supabase.rpc('save_submission_responses', {p_id:id, p_responses:responses});
  if(error){ alert('Erro ao salvar: '+error.message); throw error; }
- if(count === 0){ alert('Aviso técnico: nenhuma linha foi encontrada para atualizar (id: '+id+'). Isso indica que o paciente não foi criado corretamente antes de responder.'); }
+ if(data === 0){ alert('Aviso técnico: nenhuma linha foi encontrada para atualizar (id: '+id+').'); }
 }
 async function dbListAll(){
  const {data, error} = await supabase.from('submissions').select('*').order('created_at', {ascending:false});

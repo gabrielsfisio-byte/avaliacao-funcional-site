@@ -10,16 +10,15 @@ create table if not exists submissions (
 
 alter table submissions enable row level security;
 
+drop policy if exists "anon_insert" on submissions;
+drop policy if exists "anon_update" on submissions;
+drop policy if exists "authenticated_select" on submissions;
+drop policy if exists "authenticated_delete" on submissions;
+
 -- Pacientes (sem login) podem CRIAR uma resposta nova
 create policy "anon_insert" on submissions
   for insert to anon
   with check (true);
-
--- Pacientes (sem login) podem ATUALIZAR a resposta que criaram (sabendo o id, que é um UUID
--- aleatório e nunca fica listado em lugar nenhum — funciona como um "token" de sessão)
-create policy "anon_update" on submissions
-  for update to anon
-  using (true);
 
 -- Só usuários LOGADOS (você, via Supabase Auth) podem LER a lista de pacientes
 create policy "authenticated_select" on submissions
@@ -30,6 +29,30 @@ create policy "authenticated_select" on submissions
 create policy "authenticated_delete" on submissions
   for delete to authenticated
   using (true);
+
+-- Não existe política de UPDATE direta para "anon": no Postgres, uma atualização
+-- filtrada por WHERE (ex.: "where id = ...") também exige permissão de LEITURA daquela
+-- linha, não só de escrita. Dar leitura ao paciente sem login abriria a tabela toda.
+-- Em vez disso, os pacientes atualizam suas respostas através da função abaixo, que
+-- roda com privilégio elevado (SECURITY DEFINER) e nunca expõe leitura da tabela.
+
+create or replace function save_submission_responses(p_id uuid, p_responses jsonb)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  affected integer;
+begin
+  update submissions set responses = p_responses where id = p_id;
+  get diagnostics affected = row_count;
+  return affected;
+end;
+$$;
+
+revoke all on function save_submission_responses(uuid, jsonb) from public;
+grant execute on function save_submission_responses(uuid, jsonb) to anon;
 
 -- IMPORTANTE: sem login (papel "anon"), ninguém consegue LISTAR ou LER pacientes — só
 -- criar/atualizar um registro que ele mesmo criou. Isso é o que protege os dados dos
