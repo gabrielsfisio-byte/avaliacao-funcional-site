@@ -198,8 +198,9 @@ function newUuid(){
 }
 async function dbCreatePatient(name, phone){
  const id = newUuid();
- const {error} = await supabase.from('submissions').insert({id, name, phone, responses:{}});
+ const {error, count} = await supabase.from('submissions').insert({id, name, phone, responses:{}}, {count:'exact'});
  if(error){ alert('Erro ao criar registro: '+error.message); throw error; }
+ alert('Diagnóstico: paciente criado com id '+id+' — linhas inseridas: '+count);
  return id;
 }
 async function dbSaveResponses(id, responses){
