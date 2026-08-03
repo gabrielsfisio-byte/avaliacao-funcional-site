@@ -203,8 +203,9 @@ async function dbCreatePatient(name, phone){
  return id;
 }
 async function dbSaveResponses(id, responses){
- const {error} = await supabase.from('submissions').update({responses}).eq('id', id);
+ const {error, count} = await supabase.from('submissions').update({responses}, {count:'exact'}).eq('id', id);
  if(error){ alert('Erro ao salvar: '+error.message); throw error; }
+ if(count === 0){ alert('Aviso técnico: nenhuma linha foi encontrada para atualizar (id: '+id+'). Isso indica que o paciente não foi criado corretamente antes de responder.'); }
 }
 async function dbListAll(){
  const {data, error} = await supabase.from('submissions').select('*').order('created_at', {ascending:false});
