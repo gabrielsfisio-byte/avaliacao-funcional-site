@@ -189,10 +189,18 @@ const QUESTIONNAIRES = {
 const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva"];
 
 /* ---------- Supabase data layer ---------- */
+function newUuid(){
+ if(window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+ // fallback simples caso o navegador não suporte crypto.randomUUID
+ return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c=>{
+  const r = Math.random()*16|0, v = c==='x'?r:(r&0x3|0x8); return v.toString(16);
+ });
+}
 async function dbCreatePatient(name, phone){
- const {data, error} = await supabase.from('submissions').insert({name, phone, responses:{}}).select().single();
+ const id = newUuid();
+ const {error} = await supabase.from('submissions').insert({id, name, phone, responses:{}});
  if(error){ alert('Erro ao criar registro: '+error.message); throw error; }
- return data.id;
+ return id;
 }
 async function dbSaveResponses(id, responses){
  const {error} = await supabase.from('submissions').update({responses}).eq('id', id);
