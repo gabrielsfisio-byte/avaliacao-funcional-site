@@ -226,7 +226,17 @@ async function authCurrentUser(){
  return data ? data.user : null;
 }
 
-function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+async function dbCreateAssignment(name, phone, assignedKeys){
+ const id = newUuid();
+ const {error} = await supabase.from('submissions').insert({id, name, phone, responses:{}, assigned:assignedKeys});
+ if(error){ alert('Erro ao gerar link: '+error.message); throw error; }
+ return id;
+}
+async function dbGetAssignment(id){
+ const {data, error} = await supabase.rpc('get_assignment', {p_id:id});
+ if(error || !data || !data.length) return null;
+ return data[0];
+}
 
 /* ---------- App state ---------- */
 let state = { view:'landing', patientId:null, patientName:'', responsesLocal:{}, qKey:null, qIndex:0, qAnswers:[], patients:[], openPatient:null, authError:'' };
@@ -256,7 +266,8 @@ landing(){
 },
 
 list(){
- const rows = QORDER.map(k=>{
+ const keys = state.assignedKeys || QORDER;
+ const rows = keys.map(k=>{
    const done = !!state.responsesLocal[k];
    return `<div class="qcard" data-q="${k}">
      <div><div class="qcard-title">${QUESTIONNAIRES[k].title}</div><div class="qcard-sub">${QUESTIONNAIRES[k].short}</div></div>
@@ -313,6 +324,14 @@ thanks(){
  </div></main>`;
 },
 
+invalidLink(){
+ return `<div class="topbar"><div class="brand">Gabriel dos Santos<small>Avaliação Funcional</small></div></div>
+ <main><div class="center-msg">
+   <h1>Link não encontrado</h1>
+   <p class="sub">Esse endereço não foi encontrado. Confirme se copiou o link completo, ou entre em contato com seu fisioterapeuta para receber um novo.</p>
+ </div></main>`;
+},
+
 adminGate(){
  return `<div class="topbar"><div class="brand">Área do profissional<small>Digite seu PIN</small></div>
    <button class="mode-toggle" id="toPatient">Voltar</button></div>
@@ -350,7 +369,7 @@ dashboard(){
     detail = `${r.pct.toFixed(0)}% · ${r.n} itens respondidos`;
    }
    return `<div class="score-line">
-     <div><div class="sname">${qdef.title}</div><div class="sdetail">${detail}</div>${k==='eva'?`<div style="margin-top:6px;">${detail}</div>`:''}</div>
+     <div><div class="sname">${qdef.title}</div>${k==='eva'?`<div style="margin-top:6px;">${detail}</div>`:`<div class="sdetail">${detail}</div>`}</div>
      <div>${pillsHtml}</div></div>`;
   }).join('') || `<p class="sub" style="margin:12px 0;">Nenhum questionário respondido ainda.</p>`;
   return `<div class="patient-row">
@@ -364,6 +383,23 @@ dashboard(){
  return `<div class="topbar"><div class="brand">Painel do profissional<small>${state.patients.length} pacientes registrados</small></div>
    <button class="mode-toggle" id="logoutBtn">Sair</button></div>
  <main>
+   <div class="card">
+     <label class="field">Gerar link para um paciente específico</label>
+     <input type="text" id="newName" placeholder="Nome completo do paciente">
+     <input type="tel" id="newPhone" placeholder="Telefone (opcional)">
+     <label class="field" style="margin-top:4px;">Questionários deste caso</label>
+     <div style="margin-bottom:16px;">
+       ${QORDER.map(k=>`<label style="display:flex;align-items:center;gap:10px;padding:9px 0;font-size:14.5px;border-bottom:1px dashed var(--line);">
+         <input type="checkbox" class="qcheck" value="${k}" checked style="width:18px;height:18px;flex-shrink:0;">
+         <span>${QUESTIONNAIRES[k].title}</span>
+       </label>`).join('')}
+     </div>
+     <button class="btn btn-primary" id="genLinkBtn">Gerar link</button>
+     <div id="linkResult" style="display:none;margin-top:14px;padding:14px;background:var(--bg);border-radius:10px;">
+       <div id="linkText" style="font-family:'IBM Plex Mono',monospace;font-size:12px;word-break:break-all;"></div>
+       <button class="btn btn-ghost" id="copyLinkBtn" style="width:100%;margin-top:10px;">Copiar link</button>
+     </div>
+   </div>
    <div style="display:flex;gap:10px;margin-bottom:18px;">
      <input class="searchbar" id="search" placeholder="Buscar por nome..." value="${state._search||''}" style="margin-bottom:0;flex:1;">
      <button class="btn btn-ghost" id="refreshBtn" style="white-space:nowrap;">↻ Atualizar</button>
@@ -456,6 +492,25 @@ function bind(){
 
  if(state.view==='dashboard'){
   $('logoutBtn').onclick = async ()=>{ await authLogout(); state.view='landing'; render(); };
+  $('genLinkBtn').onclick = async ()=>{
+   const name = $('newName').value.trim();
+   if(!name){ $('newName').style.borderColor='#C00000'; return; }
+   const checked = Array.from(document.querySelectorAll('.qcheck:checked')).map(el=>el.value);
+   if(!checked.length){ alert('Selecione ao menos um questionário para este paciente.'); return; }
+   $('genLinkBtn').disabled = true; $('genLinkBtn').textContent = 'Gerando...';
+   const id = await dbCreateAssignment(name, $('newPhone').value.trim(), checked);
+   const link = window.location.origin + window.location.pathname + '?p=' + id;
+   $('linkResult').style.display = 'block';
+   $('linkText').textContent = link;
+   $('genLinkBtn').disabled = false; $('genLinkBtn').textContent = 'Gerar link';
+   state.patients = await dbListAll();
+  };
+  $('copyLinkBtn') && ($('copyLinkBtn').onclick = ()=>{
+   navigator.clipboard.writeText($('linkText').textContent).then(()=>{
+    $('copyLinkBtn').textContent = 'Copiado ✓';
+    setTimeout(()=>{ if($('copyLinkBtn')) $('copyLinkBtn').textContent='Copiar link'; }, 2000);
+   });
+  });
   $('refreshBtn').onclick = async ()=>{
    $('refreshBtn').textContent='Atualizando...';
    state.patients = await dbListAll();
@@ -479,6 +534,19 @@ function bind(){
 
 /* ---------- Inicialização: se já houver sessão salva, pula direto pro painel ---------- */
 (async function init(){
+ const params = new URLSearchParams(window.location.search);
+ const pid = params.get('p');
+ if(pid){
+  const row = await dbGetAssignment(pid);
+  if(!row){ state.view='invalidLink'; render(); return; }
+  state.patientId = pid;
+  state.patientName = row.name;
+  state.assignedKeys = (row.assigned && row.assigned.length) ? row.assigned : null;
+  state.responsesLocal = row.responses || {};
+  state.view = 'list';
+  render();
+  return;
+ }
  const user = await authCurrentUser();
  if(user){
   state.patients = await dbListAll();

@@ -5,8 +5,11 @@ create table if not exists submissions (
   name text not null,
   phone text,
   responses jsonb not null default '{}'::jsonb,
+  assigned jsonb,
   created_at timestamptz not null default now()
 );
+
+alter table submissions add column if not exists assigned jsonb;
 
 alter table submissions enable row level security;
 
@@ -15,9 +18,10 @@ drop policy if exists "anon_update" on submissions;
 drop policy if exists "authenticated_select" on submissions;
 drop policy if exists "authenticated_delete" on submissions;
 
--- Pacientes (sem login) podem CRIAR uma resposta nova
+-- Pacientes (sem login) podem CRIAR uma resposta nova; você (logado) também pode criar,
+-- para gerar um link específico por paciente com os questionários já escolhidos
 create policy "anon_insert" on submissions
-  for insert to anon
+  for insert to anon, authenticated
   with check (true);
 
 -- Só usuários LOGADOS (você, via Supabase Auth) podem LER a lista de pacientes
@@ -53,6 +57,21 @@ $$;
 
 revoke all on function save_submission_responses(uuid, jsonb) from public;
 grant execute on function save_submission_responses(uuid, jsonb) to anon;
+
+-- Função para o paciente, ao abrir um link específico (?p=id), buscar só o NOME dele,
+-- quais questionários foram atribuídos a ele, e o que ele já respondeu — sem nunca
+-- abrir acesso de leitura à tabela inteira (só devolve a linha exata daquele id).
+create or replace function get_assignment(p_id uuid)
+returns table(name text, assigned jsonb, responses jsonb)
+language sql
+security definer
+set search_path = public
+as $$
+  select s.name, s.assigned, s.responses from submissions s where s.id = p_id;
+$$;
+
+revoke all on function get_assignment(uuid) from public;
+grant execute on function get_assignment(uuid) to anon;
 
 -- IMPORTANTE: sem login (papel "anon"), ninguém consegue LISTAR ou LER pacientes — só
 -- criar/atualizar um registro que ele mesmo criou. Isso é o que protege os dados dos
