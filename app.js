@@ -363,7 +363,10 @@ dashboard(){
  return `<div class="topbar"><div class="brand">Painel do profissional<small>${state.patients.length} pacientes registrados</small></div>
    <button class="mode-toggle" id="logoutBtn">Sair</button></div>
  <main>
-   <input class="searchbar" id="search" placeholder="Buscar por nome..." value="${state._search||''}">
+   <div style="display:flex;gap:10px;margin-bottom:18px;">
+     <input class="searchbar" id="search" placeholder="Buscar por nome..." value="${state._search||''}" style="margin-bottom:0;flex:1;">
+     <button class="btn btn-ghost" id="refreshBtn" style="white-space:nowrap;">↻ Atualizar</button>
+   </div>
    ${filtered.length? rows : `<div class="empty">Nenhum paciente encontrado.<br>Envie o link desta página para o paciente responder.</div>`}
  </main>`;
 }
@@ -452,6 +455,11 @@ function bind(){
 
  if(state.view==='dashboard'){
   $('logoutBtn').onclick = async ()=>{ await authLogout(); state.view='landing'; render(); };
+  $('refreshBtn').onclick = async ()=>{
+   $('refreshBtn').textContent='Atualizando...';
+   state.patients = await dbListAll();
+   render();
+  };
   $('search').oninput = (e)=>{ state._search = e.target.value; render(); };
   document.querySelectorAll('[data-toggle]').forEach(el=>{
    el.onclick = (e)=>{ if(e.target.dataset.del) return; const id = el.dataset.toggle; state.openPatient = state.openPatient===id?null:id; render(); };
