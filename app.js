@@ -16,6 +16,10 @@ function evaBand(v){
   if(v<=6) return {label:'Moderada', txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
   return {label:'Grave', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
 }
+function dn4Band(raw){
+  if(raw>=3) return {label:'Sugestivo de dor neuropática', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
+  return {label:'Não sugestivo', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
+}
 function pillHtml(band){ return `<span class="pill" style="color:${band.txt};background:${band.bg}">${band.label}</span>`; }
 
 /* ---------- Dados dos instrumentos ---------- */
@@ -170,6 +174,71 @@ const WHODAS_ITEMS = [
 ];
 const WHODAS_OPTS = ["Nenhuma dificuldade","Dificuldade leve","Dificuldade moderada","Dificuldade grave","Dificuldade extrema / não consegue fazer"];
 
+const DN4_ITEMS = [
+ "A dor tem sensação de queimação?",
+ "A dor dá sensação de frio dolorido?",
+ "A dor vem em choques elétricos?",
+ "A dor é acompanhada de formigamento?",
+ "A dor é acompanhada de alfinetadas e agulhadas?",
+ "A dor é acompanhada de dormência?",
+ "A dor é acompanhada de coceira?"
+];
+
+const FABQ_TRABALHO_ITEMS = [
+ "Minha dor foi causada por atividade física no trabalho ou por um acidente no trabalho.",
+ "A atividade física agrava minha dor.",
+ "Eu tenho o direito de receber compensação financeira pela minha dor relacionada ao trabalho.",
+ "Meu trabalho é fisicamente pesado demais para mim.",
+ "Meu trabalho piora, ou pioraria, minha dor.",
+ "Meu trabalho pode causar dano à minha coluna/ao meu corpo.",
+ "Eu não deveria fazer meu trabalho normal com a minha dor atual."
+];
+const FABQ_OPTS = ["0 — Discordo totalmente","1","2","3 — Neutro","4","5","6 — Concordo totalmente"];
+
+const PCS_ITEMS = [
+ "Fico preocupado(a) o tempo todo pensando se a dor vai passar.",
+ "Sinto que não consigo mais suportar.",
+ "É terrível e acho que a dor nunca vai melhorar.",
+ "É horrível e sinto que a dor domina completamente minha vida.",
+ "Sinto que não aguento mais.",
+ "Tenho medo de que a dor piore.",
+ "Fico pensando em outras situações em que senti dor.",
+ "Desejo ansiosamente que a dor desapareça.",
+ "Não consigo tirar a dor da cabeça.",
+ "Fico pensando o tempo todo em quanto isso dói.",
+ "Fico pensando o tempo todo em como eu quero que a dor pare.",
+ "Não há nada que eu possa fazer para reduzir a intensidade da dor.",
+ "Fico pensando se pode acontecer algo grave comigo por causa da dor."
+];
+const PCS_OPTS = ["0 — Nunca","1 — Poucas vezes","2 — Moderadamente","3 — Muitas vezes","4 — Sempre"];
+
+const RMDQ_ITEMS = [
+ "Fico em casa a maior parte do tempo por causa da minha coluna.",
+ "Mudo de posição frequentemente tentando deixar minha coluna confortável.",
+ "Ando mais devagar que o normal por causa da minha coluna.",
+ "Por causa da minha coluna, não estou fazendo nenhum dos trabalhos que costumo fazer em casa.",
+ "Por causa da minha coluna, uso o corrimão para subir escadas.",
+ "Por causa da minha coluna, deito-me para descansar mais frequentemente.",
+ "Por causa da minha coluna, preciso me apoiar em algo para me levantar de uma poltrona.",
+ "Por causa da minha coluna, peço para outras pessoas fazerem coisas por mim.",
+ "Visto-me mais devagar que o normal por causa da minha coluna.",
+ "Só fico em pé por curtos períodos de tempo por causa da minha coluna.",
+ "Por causa da minha coluna, tento não me abaixar ou ajoelhar.",
+ "Sinto dificuldade em me levantar de uma cadeira por causa da minha coluna.",
+ "Minha coluna dói quase o tempo todo.",
+ "Tenho dificuldade em me virar na cama por causa da minha coluna.",
+ "Meu apetite não é muito bom por causa da dor na minha coluna.",
+ "Tenho problemas para colocar as meias por causa da dor na minha coluna.",
+ "Só consigo andar distâncias curtas por causa da dor na minha coluna.",
+ "Durmo pior por causa da minha coluna.",
+ "Por causa da dor na minha coluna, preciso de ajuda para me vestir.",
+ "Fico sentado a maior parte do dia por causa da minha coluna.",
+ "Evito trabalhos pesados em casa por causa da minha coluna.",
+ "Por causa da dor na coluna, fico mais irritado(a) e mal-humorado(a) com as pessoas do que o normal.",
+ "Por causa da minha coluna, subo escadas mais devagar que o normal.",
+ "Fico na cama a maior parte do tempo por causa da minha coluna."
+];
+
 const QUESTIONNAIRES = {
  odi: { title:"Índice de Incapacidade de Oswestry (ODI)", short:"ODI · coluna lombar", type:"sections", data:ODI_SECTIONS,
   score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*5))*100:0, raw:sum, n:a.length}; } },
@@ -184,9 +253,17 @@ const QUESTIONNAIRES = {
   score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
  eva: { title:"Escala Visual Analógica de Dor (EVA)", short:"EVA · dor em 4 condições", type:"sliders",
   items:["Repouso (agora)","Pior momento do dia","Melhor momento do dia","Sob simulação de demanda laboral"],
-  score(answers){ return {answers}; } }
+  score(answers){ return {answers}; } },
+ dn4: { title:"DN4 — versão entrevista (dor neuropática)", short:"DN4 · qualidade da dor", type:"yesno", items:DN4_ITEMS,
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:0, raw:sum, n:a.length}; } },
+ fabq: { title:"FABQ — subescala trabalho", short:"FABQ-trabalho · medo-evitação", type:"likert", items:FABQ_TRABALHO_ITEMS, opts:FABQ_OPTS,
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*6))*100:0, raw:sum, n:a.length}; } },
+ pcs: { title:"PCS (Pain Catastrophizing Scale)", short:"PCS · catastrofização da dor", type:"likert", items:PCS_ITEMS, opts:PCS_OPTS,
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
+ rmdq: { title:"Roland-Morris (RMDQ)", short:"RMDQ · incapacidade lombar leve-moderada", type:"yesno", items:RMDQ_ITEMS,
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/a.length)*100:0, raw:sum, n:a.length}; } }
 };
-const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva"];
+const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq"];
 
 /* ---------- Supabase data layer ---------- */
 function newUuid(){
@@ -297,6 +374,10 @@ wizard(){
  } else if(q.type==='likert'){
   const opts = q.optsPerItem ? q.optsPerItem[state.qIndex] : q.opts;
   body = `<div class="qtext">${current}</div>` + opts.map((o,i)=>`<button class="opt ${state.qAnswers[state.qIndex]===i?'selected':''}" data-val="${i}">${o}</button>`).join('');
+ } else if(q.type==='yesno'){
+  body = `<div class="qtext">${current}</div>
+   <button class="opt ${state.qAnswers[state.qIndex]===1?'selected':''}" data-val="1">Sim</button>
+   <button class="opt ${state.qAnswers[state.qIndex]===0?'selected':''}" data-val="0">Não</button>`;
  } else if(q.type==='sliders'){
   const val = state.qAnswers[state.qIndex] ?? 0;
   body = `<div class="qtext">${current}</div>
@@ -363,10 +444,17 @@ dashboard(){
      return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;"><span>${label}</span><span class="pill" style="color:${b.txt};background:${b.bg}">${v??'-'}/10</span></div>`;
     }).join('');
     pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">4 condições</span>`;
+   } else if(k==='dn4'){
+    const band = dn4Band(r.raw);
+    pillsHtml = pillHtml(band);
+    detail = `${r.raw}/7 itens positivos (corte usual: ≥3/7 sugere dor neuropática)`;
    } else {
     const band = cifBand(r.pct);
     pillsHtml = pillHtml(band) + ` <span class="pill" style="background:var(--gray-bg);color:var(--gray-txt);margin-left:4px;">CIF ${band.q}</span>`;
     detail = `${r.pct.toFixed(0)}% · ${r.n} itens respondidos`;
+    if(k==='pcs'){ detail += ` · ${r.raw}/52 pontos (corte clínico usual: ≥30)`; }
+    if(k==='fabq'){ detail += ` · ${r.raw}/42 pontos (corte usual: ≥34, alto medo-evitação)`; }
+    if(k==='rmdq'){ detail += ` · ${r.raw}/24 itens marcados`; }
    }
    return `<div class="score-line">
      <div><div class="sname">${qdef.title}</div>${k==='eva'?`<div style="margin-top:6px;">${detail}</div>`:`<div class="sdetail">${detail}</div>`}</div>
