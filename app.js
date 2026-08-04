@@ -383,6 +383,46 @@ const PSFS_STEPS = [
  "Atividade 3 de 3"
 ];
 
+const WIQ_ABILITY_OPTS = ["Incapaz de fazer","Muita dificuldade","Dificuldade moderada","Pouca dificuldade","Nenhuma dificuldade"];
+const WIQ_ITEMS = [
+ "Andar dentro de casa, de um cômodo a outro.",
+ "Andar cerca de 50 metros (por exemplo, até o portão de casa e voltar).",
+ "Andar cerca de 150 metros (mais ou menos meio quarteirão).",
+ "Andar cerca de 300 metros (mais ou menos um quarteirão).",
+ "Andar cerca de 900 metros (mais ou menos três quarteirões).",
+ "Andar bem devagar.",
+ "Andar num ritmo normal.",
+ "Andar rápido.",
+ "Correr uma curta distância.",
+ "Subir 1 andar de escada.",
+ "Subir 2 andares de escada.",
+ "Subir 3 andares de escada."
+];
+
+const LEFS_OPTS = ["Dificuldade extrema ou incapaz de fazer","Muita dificuldade","Dificuldade moderada","Pouca dificuldade","Nenhuma dificuldade"];
+const LEFS_ITEMS = [
+ "Qualquer uma das suas atividades domésticas habituais.",
+ "Seus hobbies, atividades recreativas ou esportes.",
+ "Entrar ou sair de dentro de um carro.",
+ "Caminhar de um cômodo a outro da casa.",
+ "Colocar ou tirar meias.",
+ "Agachar-se.",
+ "Levantar um objeto do chão, como uma sacola de compras.",
+ "Realizar atividades domésticas leves.",
+ "Realizar atividades domésticas pesadas.",
+ "Entrar ou sair da banheira/box do banho.",
+ "Andar cerca de 300 metros.",
+ "Subir ou descer cerca de 10 degraus (mais ou menos um lance de escada).",
+ "Ficar em pé por 1 hora.",
+ "Ficar sentado(a) por 1 hora.",
+ "Correr em terreno plano.",
+ "Correr em terreno irregular.",
+ "Fazer curvas ou mudar de direção rapidamente enquanto anda ou corre.",
+ "Pular.",
+ "Rolar na cama.",
+ "Sua atividade de trabalho habitual, do jeito que você normalmente faz."
+];
+
 const QUESTIONNAIRES = {
  odi: { title:"Índice de Incapacidade de Oswestry (ODI)", short:"ODI · coluna lombar", type:"sections", data:ODI_SECTIONS,
   intro:"Estas perguntas são sobre a parte de baixo das suas costas (a coluna lombar) e como a dor atrapalha o seu dia a dia. Escolha a frase que mais parece com a sua situação hoje — não existe resposta certa ou errada.",
@@ -426,9 +466,15 @@ const QUESTIONNAIRES = {
   } },
  psfs: { title:"PSFS (Escala Funcional Específica do Paciente)", short:"PSFS · atividades escolhidas pelo próprio paciente", type:"psfs", items:PSFS_STEPS,
   intro:"Agora pense em até 3 atividades do seu dia a dia que ficaram difíceis por causa do problema. Para cada uma, dê uma nota de 0 a 10: 0 é 'não consigo fazer de jeito nenhum', 10 é 'consigo fazer como fazia antes'.",
-  score(answers){ return {activities: answers}; } }
+  score(answers){ return {activities: answers}; } },
+ wiq: { title:"WIQ (Walking Impairment Questionnaire)", short:"WIQ · caminhada e claudicação", type:"likert", items:WIQ_ITEMS, opts:WIQ_ABILITY_OPTS,
+  intro:"Estas perguntas são sobre sua capacidade de caminhar e subir escadas — distâncias e velocidades diferentes. Escolha a opção que mais parece com o que você consegue fazer hoje.",
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); const pct=a.length?100-((sum/(a.length*4))*100):0; return {pct, raw:sum, n:a.length}; } },
+ lefs: { title:"LEFS (Lower Extremity Functional Scale)", short:"LEFS · função de quadril, joelho e marcha", type:"likert", items:LEFS_ITEMS, opts:LEFS_OPTS,
+  intro:"Estas perguntas são sobre atividades do dia a dia que dependem das suas pernas — agachar, subir escada, ficar em pé, andar, entre outras. Escolha a opção que mais parece com o que você consegue fazer hoje.",
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); const pct=a.length?100-((sum/(a.length*4))*100):0; return {pct, raw:sum, n:a.length}; } }
 };
-const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs"];
+const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs"];
 
 /* ---------- Supabase data layer ---------- */
 function newUuid(){
