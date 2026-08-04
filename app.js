@@ -63,6 +63,73 @@ function renderItemDetail(k, r){
  return `<div style="margin-top:6px;padding-top:2px;">${rows.join('')}</div>`;
 }
 
+function buildReportText(p){
+ const lines = [];
+ lines.push('AVALIAÇÃO FUNCIONAL — '+p.name);
+ lines.push('Registro criado em: '+new Date(p.created_at).toLocaleString('pt-BR'));
+ lines.push('');
+ const keys = Object.keys(p.responses||{});
+ if(!keys.length){ lines.push('Nenhum questionário respondido ainda.'); return lines.join('\n'); }
+ keys.forEach(k=>{
+  const r = p.responses[k];
+  const qdef = QUESTIONNAIRES[k];
+  const ans = r.rawAnswers;
+  lines.push('='.repeat(60));
+  lines.push(qdef.title);
+  lines.push('='.repeat(60));
+
+  if(k==='eva'){
+   qdef.items.forEach((label,i)=>{ lines.push(label+': '+(r.answers[i]??'-')+'/10'); });
+  } else if(k==='psfs'){
+   (r.activities||[]).forEach(a=>{ if(a) lines.push((a.activity||'(sem nome)')+': '+(a.score??'-')+'/10'); });
+  } else if(k==='dn4'){
+   lines.push('Resultado: '+r.raw+'/7 itens positivos (corte usual: \u22653/7 sugere dor neuropática)');
+   lines.push('');
+   qdef.items.forEach((item,i)=>{
+    const v = ans ? ans[i] : null;
+    lines.push(item+' '+(v===1?'Sim':(v===0?'Não':'(não respondido)')));
+   });
+  } else if(k==='mjoa'){
+   const band = mjoaBand(r.raw, r.maxPossible);
+   lines.push('Resultado: '+r.raw+'/'+(r.maxPossible||18)+' pontos — '+band.label);
+   lines.push('');
+   qdef.data.forEach((sec,i)=>{
+    const [domain, opts] = sec;
+    const v = ans ? ans[i] : null;
+    lines.push(domain+': '+((v!==null&&v!==undefined)?opts[v]:'(não respondido)'));
+   });
+  } else {
+   const band = cifBand(r.pct);
+   let summary = 'Resultado: '+r.pct.toFixed(0)+'% — '+band.label+' (qualificador CIF '+band.q+')';
+   if(k==='pcs'){ summary += ' · '+r.raw+'/52 pontos (corte clínico usual: \u226530)'; }
+   if(k==='fabq'){ summary += ' · '+r.raw+'/42 pontos (corte usual: \u226534)'; }
+   if(k==='rmdq'){ summary += ' · '+r.raw+'/24 itens marcados'; }
+   lines.push(summary);
+   lines.push('');
+   if(qdef.type==='sections'){
+    qdef.data.forEach((sec,i)=>{
+     const [domain, opts] = sec;
+     const v = ans ? ans[i] : null;
+     lines.push(domain+': '+((v!==null&&v!==undefined)?opts[v]:'(não respondido)'));
+    });
+   } else if(qdef.type==='likert'){
+    qdef.items.forEach((item,i)=>{
+     const opts = qdef.optsPerItem ? qdef.optsPerItem[i] : qdef.opts;
+     const v = ans ? ans[i] : null;
+     lines.push(item+' '+((v!==null&&v!==undefined)?opts[v]:'(não respondido)'));
+    });
+   } else if(qdef.type==='yesno'){
+    qdef.items.forEach((item,i)=>{
+     const v = ans ? ans[i] : null;
+     lines.push(item+' '+(v===1?'Sim':(v===0?'Não':'(não respondido)')));
+    });
+   }
+  }
+  lines.push('');
+ });
+ return lines.join('\n');
+}
+
 /* ---------- Dados dos instrumentos ---------- */
 const ODI_SECTIONS = [
  ["Intensidade da dor",[
@@ -459,6 +526,20 @@ list(){
  </main>`;
 },
 
+instructions(){
+ const q = QUESTIONNAIRES[state.qKey];
+ return `<div class="topbar"><div class="brand">${q.title}<small>Antes de começar</small></div></div>
+ <main>
+   <div class="card">
+     <p class="sub" style="margin-bottom:14px;">Responda pensando em como você está agora, nas últimas semanas — não em como era antes do problema começar, e não em como imagina que vai ficar no futuro.</p>
+     <p class="sub" style="margin-bottom:14px;">Não existe resposta certa ou errada. Responda com sinceridade, mesmo que a resposta pareça leve ou grave. O importante é que reflita exatamente o que você sente e consegue fazer hoje.</p>
+     <p class="sub" style="margin-bottom:0;">Se tiver dúvida sobre o que uma pergunta quer dizer, pergunte antes de responder.</p>
+     ${state.qKey==='psfs' ? `<div style="margin-top:16px;padding-top:16px;border-top:1px dashed var(--line);"><p class="sub" style="margin-bottom:0;">Pense em atividades do seu dia a dia que ficaram difíceis por causa do seu problema de saúde. Pode ser qualquer coisa: uma tarefa em casa, no trabalho, um hobby, um movimento específico. Escolha as que realmente afetam sua rotina.</p></div>` : ''}
+   </div>
+   <button class="btn btn-primary" id="startQBtn" style="width:100%;">Entendi, começar</button>
+ </main>`;
+},
+
 wizard(){
  const q = QUESTIONNAIRES[state.qKey];
  let total, current;
@@ -608,12 +689,16 @@ dashboard(){
      ${(canExpand && isOpen) ? renderItemDetail(k, r) : ''}
    </div>`;
   }).join('') || `<p class="sub" style="margin:12px 0;">Nenhum questionário respondido ainda.</p>`;
+  const actionsHtml = keys.length ? `<div style="display:flex;gap:8px;margin-bottom:14px;">
+      <button class="btn btn-ghost" style="flex:1;" data-copyreport="${p.id}">📋 Copiar tudo</button>
+      <button class="btn btn-ghost" style="flex:1;" data-downloadreport="${p.id}">⬇ Baixar .txt</button>
+    </div>` : '';
   return `<div class="patient-row">
     <div class="patient-head" data-toggle="${p.id}">
       <div><div class="patient-name">${p.name}</div><div class="patient-meta">${new Date(p.created_at).toLocaleString('pt-BR')} · ${keys.length}/${(p.assigned && p.assigned.length) ? p.assigned.length : QORDER.length} questionários</div></div>
       <button class="del-link" data-del="${p.id}">excluir</button>
     </div>
-    <div class="patient-body ${open?'open':''}">${inner}</div>
+    <div class="patient-body ${open?'open':''}">${actionsHtml}${inner}</div>
   </div>`;
  }).join('');
  return `<div class="topbar"><div class="brand">Painel do profissional<small>${state.patients.length} pacientes registrados</small></div>
@@ -682,10 +767,14 @@ function bind(){
     const len = q.type==='sections'? q.data.length : q.items.length;
     const existing = state.responsesLocal[k];
     state.qAnswers = existing && existing.rawAnswers ? existing.rawAnswers.slice() : new Array(len).fill(null);
-    state.view='wizard'; render();
+    state.view='instructions'; render();
    };
   });
   $('finishBtn').onclick = ()=>{ state.view='thanks'; render(); };
+ }
+
+ if(state.view==='instructions'){
+  $('startQBtn').onclick = ()=>{ state.view='wizard'; render(); };
  }
 
  if(state.view==='wizard'){
@@ -732,7 +821,7 @@ function bind(){
     const q2 = QUESTIONNAIRES[next];
     const len2 = q2.type==='sections'? q2.data.length : q2.items.length;
     state.qAnswers = new Array(len2).fill(null);
-    state.view='wizard'; render();
+    state.view='instructions'; render();
    };
    $('nextQBtn').onclick = goNext;
    $('seeListBtn').onclick = ()=>{ if(justDoneTimer){ clearTimeout(justDoneTimer); justDoneTimer=null; } state.view='list'; render(); };
@@ -803,6 +892,35 @@ function bind(){
     const key = el.dataset.toggledetail;
     state.openDetails[key] = !state.openDetails[key];
     render();
+   };
+  });
+  document.querySelectorAll('[data-copyreport]').forEach(el=>{
+   el.onclick = (e)=>{
+    e.stopPropagation();
+    const p = state.patients.find(pp=>pp.id===el.dataset.copyreport);
+    if(!p) return;
+    navigator.clipboard.writeText(buildReportText(p)).then(()=>{
+     const original = el.textContent;
+     el.textContent = 'Copiado ✓';
+     setTimeout(()=>{ el.textContent = original; }, 2000);
+    });
+   };
+  });
+  document.querySelectorAll('[data-downloadreport]').forEach(el=>{
+   el.onclick = (e)=>{
+    e.stopPropagation();
+    const p = state.patients.find(pp=>pp.id===el.dataset.downloadreport);
+    if(!p) return;
+    const text = buildReportText(p);
+    const blob = new Blob([text], {type:'text/plain;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'avaliacao-'+p.name.trim().toLowerCase().replace(/[^a-z0-9]+/gi,'-')+'.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
    };
   });
  }
