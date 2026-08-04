@@ -20,6 +20,17 @@ function dn4Band(raw){
   if(raw>=3) return {label:'Sugestivo de dor neuropática', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
   return {label:'Não sugestivo', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
 }
+function mjoaBand(raw, maxPossible){
+  const scaled = maxPossible ? (raw/maxPossible)*18 : raw;
+  if(scaled>=15) return {label:'Mielopatia leve', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
+  if(scaled>=12) return {label:'Mielopatia moderada', txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
+  return {label:'Mielopatia grave', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
+}
+function psfsItemBand(v){
+  if(v>=7) return {label:'Preservada', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
+  if(v>=4) return {label:'Moderada', txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
+  return {label:'Grave', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
+}
 function pillHtml(band){ return `<span class="pill" style="color:${band.txt};background:${band.bg}">${band.label}</span>`; }
 
 function renderItemDetail(k, r){
@@ -269,6 +280,42 @@ const RMDQ_ITEMS = [
  "Fico na cama a maior parte do tempo por causa da minha coluna."
 ];
 
+const MJOA_MAX = [5,7,3,3];
+const MJOA_SECTIONS = [
+ ["Função motora dos membros superiores (mãos e braços)",[
+  "Não consigo mover as mãos de forma alguma",
+  "Não consigo me alimentar sozinho(a) ou usar talheres por dormência/fraqueza nas mãos, mas consigo mover as mãos",
+  "Consigo segurar objetos como talheres, mas não consigo usá-los por dormência/fraqueza",
+  "Consigo segurar talheres, mas não uso bem por dormência/fraqueza",
+  "Consigo usar as mãos com leve falta de jeito",
+  "Nenhuma dificuldade"]],
+ ["Função motora dos membros inferiores (pernas)",[
+  "Perda completa de movimento e sensibilidade nas pernas",
+  "Sensibilidade preservada, mas não consigo mover as pernas",
+  "Consigo mover as pernas, mas não consigo andar",
+  "Consigo andar em piso plano com apoio (bengala ou muleta)",
+  "Consigo subir e/ou descer escadas com apoio no corrimão",
+  "Falta de estabilidade moderada a importante, mas consigo subir/descer escadas sem corrimão",
+  "Leve falta de estabilidade, mas ando de forma suave e sem ajuda",
+  "Nenhuma dificuldade"]],
+ ["Sensibilidade nas mãos e braços",[
+  "Perda completa de sensibilidade nas mãos",
+  "Perda importante de sensibilidade, ou dor",
+  "Perda leve de sensibilidade",
+  "Sensibilidade normal"]],
+ ["Controle da urina (função esfincteriana)",[
+  "Não consigo urinar por vontade própria (retenção completa)",
+  "Dificuldade importante para urinar (retenção acentuada, esforço para urinar, ou perdas urinárias)",
+  "Dificuldade leve a moderada (urgência, aumento da frequência, hesitação)",
+  "Normal"]]
+];
+
+const PSFS_STEPS = [
+ "Atividade 1 de 3 — pense em algo que você tem dificuldade de fazer hoje por causa do problema",
+ "Atividade 2 de 3",
+ "Atividade 3 de 3"
+];
+
 const QUESTIONNAIRES = {
  odi: { title:"Índice de Incapacidade de Oswestry (ODI)", short:"ODI · coluna lombar", type:"sections", data:ODI_SECTIONS,
   intro:"Estas perguntas são sobre a parte de baixo das suas costas (a coluna lombar) e como a dor atrapalha o seu dia a dia. Escolha a frase que mais parece com a sua situação hoje — não existe resposta certa ou errada.",
@@ -301,9 +348,20 @@ const QUESTIONNAIRES = {
   score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
  rmdq: { title:"Roland-Morris (RMDQ)", short:"RMDQ · incapacidade lombar leve-moderada", type:"yesno", items:RMDQ_ITEMS,
   intro:"Estas são frases sobre o seu dia a dia por causa da dor na coluna. Marque Sim se a frase descreve como você está hoje, ou Não se ela não descreve.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/a.length)*100:0, raw:sum, n:a.length}; } }
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/a.length)*100:0, raw:sum, n:a.length}; } },
+ mjoa: { title:"mJOA (mielopatia cervical)", short:"mJOA · função motora, sensibilidade e esfíncter", type:"sections", data:MJOA_SECTIONS,
+  intro:"Estas perguntas são sobre força, sensibilidade e controle da urina — coisas que podem ser afetadas quando há compressão na coluna do pescoço. Escolha a frase que mais parece com a sua situação hoje.",
+  score(answers){
+   let raw=0, maxPossible=0, n=0;
+   answers.forEach((v,i)=>{ if(v!==null && v!==undefined){ raw+=v; maxPossible+=MJOA_MAX[i]; n++; } });
+   const pct = maxPossible ? 100-((raw/maxPossible)*100) : 0;
+   return {pct, raw, n, maxPossible};
+  } },
+ psfs: { title:"PSFS (Escala Funcional Específica do Paciente)", short:"PSFS · atividades escolhidas pelo próprio paciente", type:"psfs", items:PSFS_STEPS,
+  intro:"Agora pense em até 3 atividades do seu dia a dia que ficaram difíceis por causa do problema. Para cada uma, dê uma nota de 0 a 10: 0 é 'não consigo fazer de jeito nenhum', 10 é 'consigo fazer como fazia antes'.",
+  score(answers){ return {activities: answers}; } }
 };
-const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq"];
+const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs"];
 
 /* ---------- Supabase data layer ---------- */
 function newUuid(){
@@ -425,7 +483,17 @@ wizard(){
    <div class="slider-wrap"><div class="slider-val" id="sliderVal">${val}</div>
    <input type="range" min="0" max="10" step="1" value="${val}" id="sliderInput">
    <div style="display:flex;justify-content:space-between;color:var(--muted);font-size:12px;"><span>Sem dor</span><span>Dor máxima</span></div></div>`;
+ } else if(q.type==='psfs'){
+  const existing = state.qAnswers[state.qIndex] || {activity:'', score:0};
+  body = `<div class="qtext">${current}</div>
+   <label class="field">Nome da atividade</label>
+   <input type="text" id="psfsActivity" placeholder="Ex.: subir escadas, carregar sacola de compras..." value="${existing.activity||''}">
+   <label class="field" style="margin-top:6px;">Nota (0 = não consigo fazer, 10 = consigo fazer como antes)</label>
+   <div class="slider-wrap"><div class="slider-val" id="sliderVal">${existing.score??0}</div>
+   <input type="range" min="0" max="10" step="1" value="${existing.score??0}" id="sliderInput"></div>`;
  }
+ const psfsOk = q.type==='psfs' && state.qAnswers[state.qIndex] && state.qAnswers[state.qIndex].activity && state.qAnswers[state.qIndex].activity.trim();
+ const nextDisabled = q.type==='psfs' ? !psfsOk : (state.qAnswers[state.qIndex]===null||state.qAnswers[state.qIndex]===undefined);
  return `
  <div class="topbar"><div class="brand">${q.title}<small>${state.qIndex+1} de ${total}</small></div></div>
  <main>
@@ -434,7 +502,7 @@ wizard(){
   ${body}
   <div class="navrow">
    <button class="btn btn-ghost" id="backBtn">${state.qIndex===0?'Cancelar':'Voltar'}</button>
-   <button class="btn btn-primary" id="nextBtn" ${state.qAnswers[state.qIndex]===null||state.qAnswers[state.qIndex]===undefined?'disabled':''}>${state.qIndex===total-1?'Concluir':'Próxima'}</button>
+   <button class="btn btn-primary" id="nextBtn" ${nextDisabled?'disabled':''}>${state.qIndex===total-1?'Concluir':'Próxima'}</button>
   </div>
  </main>`;
 },
@@ -503,10 +571,21 @@ dashboard(){
      return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;"><span>${label}</span><span class="pill" style="color:${b.txt};background:${b.bg}">${v??'-'}/10</span></div>`;
     }).join('');
     pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">4 condições</span>`;
+   } else if(k==='psfs'){
+    detail = (r.activities||[]).map((a,i)=>{
+     if(!a) return '';
+     const b = psfsItemBand(a.score??0);
+     return `<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:13px;"><span>${a.activity||'(sem nome)'}</span><span class="pill" style="color:${b.txt};background:${b.bg}">${a.score??'-'}/10</span></div>`;
+    }).join('');
+    pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">${(r.activities||[]).filter(a=>a).length} atividades</span>`;
    } else if(k==='dn4'){
     const band = dn4Band(r.raw);
     pillsHtml = pillHtml(band);
     detail = `${r.raw}/7 itens positivos (corte usual: ≥3/7 sugere dor neuropática)`;
+   } else if(k==='mjoa'){
+    const band = mjoaBand(r.raw, r.maxPossible);
+    pillsHtml = pillHtml(band);
+    detail = `${r.raw}/${r.maxPossible||18} pontos · ${r.n} domínios respondidos (≥15 leve · 12-14 moderada · ≤11 grave, escala de 18)`;
    } else {
     const band = cifBand(r.pct);
     pillsHtml = pillHtml(band) + ` <span class="pill" style="background:var(--gray-bg);color:var(--gray-txt);margin-left:4px;">CIF ${band.q}</span>`;
@@ -517,10 +596,10 @@ dashboard(){
    }
    const detailKey = p.id+'::'+k;
    const isOpen = !!state.openDetails[detailKey];
-   const canExpand = (k!=='eva');
+   const canExpand = (k!=='eva' && k!=='psfs');
    return `<div class="score-line" style="flex-direction:column;align-items:stretch;">
      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-       <div><div class="sname">${qdef.title}</div>${k==='eva'?`<div style="margin-top:6px;">${detail}</div>`:`<div class="sdetail">${detail}</div>`}</div>
+       <div><div class="sname">${qdef.title}</div>${(k==='eva'||k==='psfs')?`<div style="margin-top:6px;">${detail}</div>`:`<div class="sdetail">${detail}</div>`}</div>
        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
          ${pillsHtml}
          ${canExpand?`<button class="del-link" style="color:var(--blue);" data-toggledetail="${detailKey}">${isOpen?'ocultar':'ver respostas'}</button>`:''}
@@ -616,6 +695,16 @@ function bind(){
    const slider = $('sliderInput');
    slider.oninput = ()=>{ $('sliderVal').textContent = slider.value; state.qAnswers[state.qIndex] = parseInt(slider.value); $('nextBtn').disabled=false; };
    if(state.qAnswers[state.qIndex]===null) state.qAnswers[state.qIndex]=0;
+  } else if(q.type==='psfs'){
+   if(!state.qAnswers[state.qIndex]) state.qAnswers[state.qIndex] = {activity:'', score:0};
+   const activityInput = $('psfsActivity');
+   const slider = $('sliderInput');
+   activityInput.oninput = ()=>{
+    state.qAnswers[state.qIndex].activity = activityInput.value;
+    const ok = activityInput.value.trim().length>0;
+    $('nextBtn').disabled = !ok;
+   };
+   slider.oninput = ()=>{ $('sliderVal').textContent = slider.value; state.qAnswers[state.qIndex].score = parseInt(slider.value); };
   } else {
    document.querySelectorAll('.opt').forEach(el=>{ el.onclick = ()=>{ state.qAnswers[state.qIndex] = parseInt(el.dataset.val); render(); }; });
   }

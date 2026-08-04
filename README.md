@@ -87,7 +87,11 @@ Esse é o link que você manda para o paciente.
 Os itens dos questionários foram escritos seguindo a estrutura clínica padrão de cada
 instrumento, mas a redação não foi conferida palavra por palavra contra as versões
 oficiais validadas para o português do Brasil (Vigatto et al. para o ODI, Siqueira et al.
-para o TSK-13, Orfale/Silva para o QuickDASH). Antes de usar os resultados em um laudo que
-vá para o INSS ou para o Judiciário, vale comparar o texto das perguntas com as versões
-validadas publicadas — principalmente o item de pontuação invertida do TSK-13, que varia
-de numeração entre versões.
+para o TSK-13, Orfale/Silva para o QuickDASH). O mJOA foi adaptado para autorrelato a
+partir das descrições padrão de cada domínio (motor de membros superiores/inferiores,
+sensibilidade, esfíncter) — vale revisar contra a versão de referência que você usa antes
+de citar em laudo, e o total considerado foi 18 pontos (a literatura cita tanto 17 quanto
+18 dependendo da fonte). Antes de usar os resultados em um laudo que vá para o INSS ou
+para o Judiciário, vale comparar o texto das perguntas com as versões validadas
+publicadas — principalmente o item de pontuação invertida do TSK-13, que varia de
+numeração entre versões.
