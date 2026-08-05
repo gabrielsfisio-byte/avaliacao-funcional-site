@@ -525,9 +525,53 @@ async function dbGetAssignment(id){
  if(error || !data || !data.length) return null;
  return data[0];
 }
+async function dbAddSlot(slotTimeISO, duration){
+ const {error} = await supabase.from('availability_slots').insert({slot_time:slotTimeISO, duration_minutes:duration});
+ if(error){ alert('Erro ao adicionar horário: '+error.message); throw error; }
+}
+async function dbAddSlotsBulk(rows){
+ if(!rows.length) return;
+ const {error} = await supabase.from('availability_slots').insert(rows);
+ if(error){ alert('Erro ao gerar horários: '+error.message); throw error; }
+}
+// Janelas fixas de atendimento do Gabriel: 08h30–12h00 e 19h00–22h00, em blocos de 10 min.
+const AVAILABILITY_WINDOWS = [ {startH:8,startM:30,endH:12,endM:0}, {startH:19,startM:0,endH:22,endM:0} ];
+function generateSlotsForDate(dateStr){
+ const slots = [];
+ AVAILABILITY_WINDOWS.forEach(w=>{
+  let cur = new Date(dateStr+'T00:00:00');
+  cur.setHours(w.startH, w.startM, 0, 0);
+  const end = new Date(dateStr+'T00:00:00');
+  end.setHours(w.endH, w.endM, 0, 0);
+  while(cur < end){
+   slots.push(new Date(cur));
+   cur = new Date(cur.getTime() + 10*60000);
+  }
+ });
+ return slots;
+}
+async function dbListSlots(){
+ const {data, error} = await supabase.from('availability_slots').select('*').order('slot_time',{ascending:true});
+ if(error){ return []; }
+ return data;
+}
+async function dbDeleteSlot(id){
+ const {error} = await supabase.from('availability_slots').delete().eq('id', id);
+ if(error){ alert('Erro ao excluir horário: '+error.message); }
+}
+async function dbGetAvailableSlots(){
+ const {data, error} = await supabase.rpc('get_available_slots');
+ if(error){ return []; }
+ return data || [];
+}
+async function dbBookSlot(id, name, phone){
+ const {data, error} = await supabase.rpc('book_slot', {p_id:id, p_name:name, p_phone:phone});
+ if(error){ alert('Erro ao agendar: '+error.message); return 0; }
+ return data;
+}
 
 /* ---------- App state ---------- */
-let state = { view:'landing', patientId:null, patientName:'', responsesLocal:{}, qKey:null, qIndex:0, qAnswers:[], patients:[], openPatient:null, authError:'', openDetails:{} };
+let state = { view:'landing', patientId:null, patientName:'', responsesLocal:{}, qKey:null, qIndex:0, qAnswers:[], patients:[], openPatient:null, authError:'', openDetails:{}, slots:[], scheduleStep:null, scheduleSlots:[], selectedSlotId:null };
 let justDoneTimer = null;
 const app = document.getElementById('app');
 function render(){ app.innerHTML = views[state.view](); bind(); }
@@ -656,6 +700,7 @@ thanks(){
  <main><div class="center-msg">
    <h1>Recebido ✓</h1>
    <p class="sub">Obrigado, ${state.patientName.split(' ')[0]}. Suas respostas foram enviadas para o seu fisioterapeuta.</p>
+   ${scheduleWidgetHtml()}
  </div></main>`;
 },
 
@@ -747,9 +792,42 @@ dashboard(){
     <div class="patient-body ${open?'open':''}">${actionsHtml}${inner}</div>
   </div>`;
  }).join('');
+ const now = new Date();
+ const upcomingSlots = (state.slots||[]).filter(s=>new Date(s.slot_time) >= now);
+ const slotsHtml = upcomingSlots.length ? upcomingSlots.map(s=>{
+  const when = new Date(s.slot_time).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
+  const status = s.booked_by_name ? `Agendado — ${s.booked_by_name} (${s.booked_by_phone||'sem telefone'})` : 'Disponível';
+  const statusColor = s.booked_by_name ? 'var(--r3-txt)' : 'var(--r1-txt)';
+  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px dashed var(--line);">
+    <div><div style="font-size:13.5px;font-weight:600;">${when}</div><div style="font-size:12.5px;color:${statusColor};">${status}</div></div>
+    <button class="del-link" data-delslot="${s.id}">excluir</button>
+  </div>`;
+ }).join('') : `<p class="sub" style="margin:8px 0 0;">Nenhum horário cadastrado ainda.</p>`;
  return `<div class="topbar"><div class="brand">Painel do profissional<small>${state.patients.length} pacientes registrados</small></div>
    <button class="mode-toggle" id="logoutBtn">Sair</button></div>
  <main>
+   <div class="card">
+     <label class="field">Agenda de teleconsultas (até 10 min)</label>
+     <p class="sub" style="margin-bottom:10px;">Suas janelas fixas de atendimento: 8h30–12h e 19h–22h. Escolha uma data e gere os horários de 10 em 10 minutos automaticamente.</p>
+     <div style="display:flex;gap:10px;margin-bottom:10px;">
+       <input type="date" id="bulkDate" style="flex:1;padding:13px 14px;border:1.5px solid var(--line);border-radius:10px;font-family:'Inter';font-size:15px;">
+       <button class="btn btn-primary" id="genDayBtn" style="white-space:nowrap;">Gerar esse dia</button>
+     </div>
+     <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;">
+       <span style="font-size:13.5px;color:var(--muted);">ou gere vários dias de uma vez:</span>
+       <input type="number" id="bulkDays" min="1" max="30" value="7" style="width:60px;padding:10px;border:1.5px solid var(--line);border-radius:10px;text-align:center;">
+       <span style="font-size:13.5px;color:var(--muted);">dias</span>
+       <button class="btn btn-ghost" id="genRangeBtn" style="white-space:nowrap;">Gerar</button>
+     </div>
+     <details style="margin-bottom:14px;">
+       <summary style="cursor:pointer;font-size:13px;color:var(--blue);">Adicionar um horário específico (fora do padrão)</summary>
+       <div style="display:flex;gap:10px;margin-top:10px;">
+         <input type="datetime-local" id="newSlotTime" style="flex:1;padding:13px 14px;border:1.5px solid var(--line);border-radius:10px;font-family:'Inter';font-size:15px;">
+         <button class="btn btn-ghost" id="addSlotBtn" style="white-space:nowrap;">+ Adicionar</button>
+       </div>
+     </details>
+     ${slotsHtml}
+   </div>
    <div class="card">
      <label class="field">Gerar link para um paciente específico</label>
      <input type="text" id="newName" placeholder="Nome completo do paciente">
@@ -776,6 +854,59 @@ dashboard(){
 }
 };
 
+function scheduleWidgetHtml(){
+ if(state.scheduleStep==='no'){
+  return `<p class="sub" style="margin-top:18px;">Sem problema, obrigado!</p>`;
+ }
+ if(state.scheduleStep==='done'){
+  const slot = state.scheduleSlots.find(s=>s.id===state.selectedSlotId);
+  const when = slot ? new Date(slot.slot_time).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}) : '';
+  return `<div class="card" style="margin-top:18px;text-align:left;">
+    <p class="sub" style="margin-bottom:0;">Teleconsulta agendada para <strong>${when}</strong>. Você vai receber a chamada nesse horário.</p>
+  </div>`;
+ }
+ if(state.scheduleStep==='slots'){
+  if(!state.scheduleSlots.length){
+   return `<div class="card" style="margin-top:18px;text-align:left;"><p class="sub" style="margin-bottom:0;">Não há horários disponíveis no momento. Fale direto com seu fisioterapeuta.</p></div>`;
+  }
+  const byDate = {};
+  state.scheduleSlots.forEach(s=>{
+   const d = new Date(s.slot_time);
+   const dateLabel = d.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'});
+   byDate[dateLabel] = byDate[dateLabel] || [];
+   byDate[dateLabel].push(s);
+  });
+  const groups = Object.keys(byDate).map(dateLabel=>{
+   const btns = byDate[dateLabel].map(s=>{
+    const timeLabel = new Date(s.slot_time).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    return `<button class="opt" data-slot="${s.id}" style="display:inline-block;width:auto;margin:0 8px 8px 0;padding:10px 16px;">${timeLabel}</button>`;
+   }).join('');
+   return `<div style="margin-bottom:10px;"><div style="font-size:12.5px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:6px;">${dateLabel}</div><div>${btns}</div></div>`;
+  }).join('');
+  return `<div class="card" style="margin-top:18px;text-align:left;">
+    <label class="field">Escolha um horário</label>
+    ${groups}
+  </div>`;
+ }
+ if(state.scheduleStep==='phone'){
+  const slot = state.scheduleSlots.find(s=>s.id===state.selectedSlotId);
+  const when = slot ? new Date(slot.slot_time).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}) : '';
+  return `<div class="card" style="margin-top:18px;text-align:left;">
+    <p class="sub">Horário escolhido: <strong>${when}</strong></p>
+    <label class="field">Seu telefone com WhatsApp</label>
+    <input type="tel" id="schedPhone" placeholder="(00) 00000-0000">
+    <button class="btn btn-primary" id="confirmScheduleBtn" style="width:100%;">Confirmar agendamento</button>
+  </div>`;
+ }
+ return `<div class="card" style="margin-top:18px;text-align:left;">
+   <p class="sub" style="margin-bottom:14px;">Antes de você sair: você teria interesse em uma teleconsulta rápida (até 10 minutos) comigo?</p>
+   <div style="display:flex;gap:10px;">
+     <button class="btn btn-primary" id="schedYesBtn" style="flex:1;">Sim, quero agendar</button>
+     <button class="btn btn-ghost" id="schedNoBtn" style="flex:1;">Não, obrigado</button>
+   </div>
+ </div>`;
+}
+
 function arcSvg(pct){
  const r=42, c=2*Math.PI*r, off = c - (c*pct/100);
  return `<svg width="104" height="104" viewBox="0 0 104 104">
@@ -790,6 +921,37 @@ function arcSvg(pct){
 function bind(){
  const $ = (id)=>document.getElementById(id);
  if(justDoneTimer){ clearTimeout(justDoneTimer); justDoneTimer=null; }
+
+ if(state.view==='thanks'){
+  if(!state.scheduleStep){
+   $('schedYesBtn') && ($('schedYesBtn').onclick = async ()=>{
+    state.scheduleSlots = await dbGetAvailableSlots();
+    state.scheduleStep = 'slots';
+    render();
+   });
+   $('schedNoBtn') && ($('schedNoBtn').onclick = ()=>{ state.scheduleStep='no'; render(); });
+  } else if(state.scheduleStep==='slots'){
+   document.querySelectorAll('[data-slot]').forEach(el=>{
+    el.onclick = ()=>{ state.selectedSlotId = el.dataset.slot; state.scheduleStep='phone'; render(); };
+   });
+  } else if(state.scheduleStep==='phone'){
+   $('confirmScheduleBtn').onclick = async ()=>{
+    const phone = $('schedPhone').value.trim();
+    if(!phone){ $('schedPhone').style.borderColor='#C00000'; return; }
+    $('confirmScheduleBtn').disabled = true; $('confirmScheduleBtn').textContent='Agendando...';
+    const affected = await dbBookSlot(state.selectedSlotId, state.patientName, phone);
+    if(!affected){
+     alert('Esse horário acabou de ser escolhido por outra pessoa. Escolha outro, por favor.');
+     state.scheduleSlots = await dbGetAvailableSlots();
+     state.scheduleStep = 'slots';
+     render();
+     return;
+    }
+    state.scheduleStep = 'done';
+    render();
+   };
+  }
+ }
 
  if(state.view==='landing'){
   $('toAdmin').onclick = ()=>{ state.view='adminGate'; render(); };
@@ -889,12 +1051,57 @@ function bind(){
    if(err){ state.authError = 'PIN incorreto.'; state.view='adminGate'; render(); return; }
    state.authError='';
    state.patients = await dbListAll();
+   state.slots = await dbListSlots();
    state.view='dashboard'; render();
   };
  }
 
  if(state.view==='dashboard'){
   $('logoutBtn').onclick = async ()=>{ await authLogout(); state.view='landing'; render(); };
+  $('genDayBtn').onclick = async ()=>{
+   const dateStr = $('bulkDate').value;
+   if(!dateStr){ $('bulkDate').style.borderColor='#C00000'; return; }
+   const existing = new Set((state.slots||[]).map(s=>new Date(s.slot_time).getTime()));
+   const rows = generateSlotsForDate(dateStr).filter(d=>!existing.has(d.getTime())).map(d=>({slot_time:d.toISOString(), duration_minutes:10}));
+   $('genDayBtn').disabled = true; $('genDayBtn').textContent = 'Gerando...';
+   await dbAddSlotsBulk(rows);
+   state.slots = await dbListSlots();
+   render();
+  };
+  $('genRangeBtn').onclick = async ()=>{
+   const startStr = $('bulkDate').value || new Date().toISOString().slice(0,10);
+   const days = Math.max(1, Math.min(30, parseInt($('bulkDays').value)||1));
+   const existing = new Set((state.slots||[]).map(s=>new Date(s.slot_time).getTime()));
+   let rows = [];
+   for(let i=0;i<days;i++){
+    const d = new Date(startStr+'T00:00:00');
+    d.setDate(d.getDate()+i);
+    const ds = d.toISOString().slice(0,10);
+    generateSlotsForDate(ds).forEach(dt=>{ if(!existing.has(dt.getTime())) rows.push({slot_time:dt.toISOString(), duration_minutes:10}); });
+   }
+   $('genRangeBtn').disabled = true; $('genRangeBtn').textContent = 'Gerando...';
+   await dbAddSlotsBulk(rows);
+   state.slots = await dbListSlots();
+   render();
+  };
+  $('addSlotBtn').onclick = async ()=>{
+   const val = $('newSlotTime').value;
+   if(!val){ return; }
+   $('addSlotBtn').disabled = true;
+   await dbAddSlot(new Date(val).toISOString(), 10);
+   state.slots = await dbListSlots();
+   $('addSlotBtn').disabled = false;
+   render();
+  };
+  document.querySelectorAll('[data-delslot]').forEach(el=>{
+   el.onclick = async (e)=>{
+    e.stopPropagation();
+    if(!confirm('Excluir este horário da agenda?')) return;
+    await dbDeleteSlot(el.dataset.delslot);
+    state.slots = await dbListSlots();
+    render();
+   };
+  });
   $('genLinkBtn').onclick = async ()=>{
    const name = $('newName').value.trim();
    if(!name){ $('newName').style.borderColor='#C00000'; return; }
@@ -917,6 +1124,7 @@ function bind(){
   $('refreshBtn').onclick = async ()=>{
    $('refreshBtn').textContent='Atualizando...';
    state.patients = await dbListAll();
+   state.slots = await dbListSlots();
    render();
   };
   $('search').oninput = (e)=>{ state._search = e.target.value; render(); };
@@ -990,6 +1198,7 @@ function bind(){
  const user = await authCurrentUser();
  if(user){
   state.patients = await dbListAll();
+  state.slots = await dbListSlots();
   state.view='dashboard';
  }
  render();

@@ -73,6 +73,15 @@ Esse é o link que você manda para o paciente.
   encontrar um paciente pelo nome; ao abrir, você vê os escores já com a cor e o
   qualificador CIF (0 a 4) que você usa na Seção 7 do laudo.
 
+## Agenda de teleconsultas
+
+No painel do profissional, o card "Agenda de teleconsultas" permite cadastrar horários
+livres (data + hora). Ao final do questionário, o paciente vê a pergunta "você teria
+interesse em uma teleconsulta rápida (até 10 minutos)?" — se disser sim, escolhe um dos
+horários livres, informa o telefone, e o horário sai da lista de disponíveis
+automaticamente (evitando que duas pessoas peguem o mesmo horário). Você acompanha tudo
+isso no mesmo card, com o nome e telefone de quem agendou.
+
 ## Segurança dos dados
 
 - A tabela `submissions` tem Row Level Security ativado: qualquer pessoa pode criar/atualizar

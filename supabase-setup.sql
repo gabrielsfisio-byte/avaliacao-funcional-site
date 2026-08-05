@@ -73,6 +73,63 @@ $$;
 revoke all on function get_assignment(uuid) from public;
 grant execute on function get_assignment(uuid) to anon;
 
+-- ===================== AGENDA DE TELECONSULTAS =====================
+
+create table if not exists availability_slots (
+  id uuid primary key default gen_random_uuid(),
+  slot_time timestamptz not null,
+  duration_minutes int not null default 10,
+  booked_by_name text,
+  booked_by_phone text,
+  booked_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+alter table availability_slots enable row level security;
+
+drop policy if exists "auth_all_slots" on availability_slots;
+create policy "auth_all_slots" on availability_slots
+  for all to authenticated
+  using (true) with check (true);
+
+-- Sem login (anon), ninguém tem acesso direto a esta tabela. Toda interação de quem
+-- não está logado passa pelas duas funções abaixo — uma só lê horários livres futuros
+-- (sem expor nome/telefone de quem já agendou), a outra reserva um horário de forma
+-- atômica (evita que duas pessoas peguem o mesmo horário ao mesmo tempo).
+
+create or replace function get_available_slots()
+returns table(id uuid, slot_time timestamptz, duration_minutes int)
+language sql
+security definer
+set search_path = public
+as $$
+  select s.id, s.slot_time, s.duration_minutes
+  from availability_slots s
+  where s.booked_by_name is null and s.slot_time > now()
+  order by s.slot_time asc;
+$$;
+revoke all on function get_available_slots() from public;
+grant execute on function get_available_slots() to anon, authenticated;
+
+create or replace function book_slot(p_id uuid, p_name text, p_phone text)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  affected integer;
+begin
+  update availability_slots
+  set booked_by_name = p_name, booked_by_phone = p_phone, booked_at = now()
+  where id = p_id and booked_by_name is null;
+  get diagnostics affected = row_count;
+  return affected;
+end;
+$$;
+revoke all on function book_slot(uuid, text, text) from public;
+grant execute on function book_slot(uuid, text, text) to anon;
+
 -- IMPORTANTE: sem login (papel "anon"), ninguém consegue LISTAR ou LER pacientes — só
 -- criar/atualizar um registro que ele mesmo criou. Isso é o que protege os dados dos
 -- outros pacientes mesmo com a chave pública (anon key) exposta no código do site.
