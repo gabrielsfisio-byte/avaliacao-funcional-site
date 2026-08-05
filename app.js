@@ -785,19 +785,21 @@ wizard(){
    <button class="opt ${state.qAnswers[state.qIndex]===1?'selected':''}" data-val="1">Sim</button>
    <button class="opt ${state.qAnswers[state.qIndex]===0?'selected':''}" data-val="0">Não</button>`;
  } else if(q.type==='sliders'){
-  const val = state.qAnswers[state.qIndex] ?? 0;
+  const val = state.qAnswers[state.qIndex];
   body = `<div class="qtext">${current}</div>
-   <div class="slider-wrap"><div class="slider-val" id="sliderVal">${val}</div>
-   <input type="range" min="0" max="10" step="1" value="${val}" id="sliderInput">
-   <div style="display:flex;justify-content:space-between;color:var(--muted);font-size:12px;"><span>Sem dor</span><span>Dor máxima</span></div></div>`;
+   <div style="display:flex;justify-content:space-between;color:var(--muted);font-size:12px;margin-bottom:10px;"><span>Sem dor</span><span>Dor máxima</span></div>
+   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+    ${[0,1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="opt" data-val="${n}" style="text-align:center;padding:16px 0;margin-bottom:0;font-weight:700;font-size:18px;${val===n?'border-color:var(--navy);background:#EEF1F7;':''}">${n}</button>`).join('')}
+   </div>`;
  } else if(q.type==='psfs'){
-  const existing = state.qAnswers[state.qIndex] || {activity:'', score:0};
+  const existing = state.qAnswers[state.qIndex] || {activity:'', score:null};
   body = `<div class="qtext">${current}</div>
    <label class="field">Nome da atividade</label>
    <input type="text" id="psfsActivity" placeholder="Ex.: subir escadas, carregar sacola de compras..." value="${existing.activity||''}">
-   <label class="field" style="margin-top:6px;">Nota (0 = não consigo fazer, 10 = consigo fazer como antes)</label>
-   <div class="slider-wrap"><div class="slider-val" id="sliderVal">${existing.score??0}</div>
-   <input type="range" min="0" max="10" step="1" value="${existing.score??0}" id="sliderInput"></div>`;
+   <label class="field" style="margin-top:14px;">Nota (0 = não consigo fazer, 10 = consigo fazer como antes)</label>
+   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+    ${[0,1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="opt psfs-num" data-val="${n}" style="text-align:center;padding:14px 0;margin-bottom:0;font-weight:700;font-size:16px;${existing.score===n?'border-color:var(--navy);background:#EEF1F7;':''}">${n}</button>`).join('')}
+   </div>`;
  } else if(q.type==='nmq'){
   const ex = state.qAnswers[state.qIndex] || {y12:null, impede:null, y7:null};
   const yn = (field, label)=>`<div style="margin-bottom:16px;">
@@ -810,7 +812,7 @@ wizard(){
    + yn('impede','Isso impediu suas atividades normais (trabalho, casa ou lazer) em algum momento?')
    + yn('y7','Você teve esse problema nos últimos 7 dias?');
  }
- const psfsOk = q.type==='psfs' && state.qAnswers[state.qIndex] && state.qAnswers[state.qIndex].activity && state.qAnswers[state.qIndex].activity.trim();
+ const psfsOk = q.type==='psfs' && state.qAnswers[state.qIndex] && state.qAnswers[state.qIndex].activity && state.qAnswers[state.qIndex].activity.trim() && state.qAnswers[state.qIndex].score!==null && state.qAnswers[state.qIndex].score!==undefined;
  const nmqEx = state.qAnswers[state.qIndex];
  const nmqOk = q.type==='nmq' && nmqEx && nmqEx.y12!==null && (nmqEx.y12===0 || (nmqEx.impede!==null && nmqEx.y7!==null));
  let nextDisabled;
@@ -1146,20 +1148,17 @@ function bind(){
  if(state.view==='wizard'){
   const q = QUESTIONNAIRES[state.qKey];
   const total = q.type==='sections'? q.data.length : q.items.length;
-  if(q.type==='sliders'){
-   const slider = $('sliderInput');
-   slider.oninput = ()=>{ $('sliderVal').textContent = slider.value; state.qAnswers[state.qIndex] = parseInt(slider.value); $('nextBtn').disabled=false; };
-   if(state.qAnswers[state.qIndex]===null) state.qAnswers[state.qIndex]=0;
-  } else if(q.type==='psfs'){
-   if(!state.qAnswers[state.qIndex]) state.qAnswers[state.qIndex] = {activity:'', score:0};
+  if(q.type==='psfs'){
+   if(!state.qAnswers[state.qIndex]) state.qAnswers[state.qIndex] = {activity:'', score:null};
    const activityInput = $('psfsActivity');
-   const slider = $('sliderInput');
    activityInput.oninput = ()=>{
     state.qAnswers[state.qIndex].activity = activityInput.value;
-    const ok = activityInput.value.trim().length>0;
+    const ok = activityInput.value.trim().length>0 && state.qAnswers[state.qIndex].score!==null && state.qAnswers[state.qIndex].score!==undefined;
     $('nextBtn').disabled = !ok;
    };
-   slider.oninput = ()=>{ $('sliderVal').textContent = slider.value; state.qAnswers[state.qIndex].score = parseInt(slider.value); };
+   document.querySelectorAll('.psfs-num').forEach(el=>{
+    el.onclick = ()=>{ state.qAnswers[state.qIndex].score = parseInt(el.dataset.val); render(); };
+   });
   } else if(q.type==='nmq'){
    if(!state.qAnswers[state.qIndex]) state.qAnswers[state.qIndex] = {y12:null, impede:null, y7:null};
    document.querySelectorAll('.nmq-opt').forEach(el=>{
