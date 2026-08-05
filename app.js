@@ -58,6 +58,13 @@ function renderItemDetail(k, r){
    const txt = (v===1) ? 'Sim' : (v===0 ? 'Não' : '<span style="color:var(--muted)">não respondido</span>');
    return `<div style="padding:9px 0;border-bottom:1px dashed var(--line);display:flex;justify-content:space-between;gap:14px;"><div style="font-size:13px;">${item}</div><div style="font-size:13px;font-weight:600;white-space:nowrap;">${txt}</div></div>`;
   });
+ } else if(q.type==='nmq'){
+  const yn=(v)=> v===1?'Sim':(v===0?'Não':'—');
+  rows = q.items.map((region,i)=>{
+   const a = ans[i];
+   if(!a || a.y12===null || a.y12===undefined) return `<div style="padding:9px 0;border-bottom:1px dashed var(--line);"><div style="font-weight:600;font-size:13px;">${region}</div><div style="font-size:13px;color:var(--muted);">não respondido</div></div>`;
+   return `<div style="padding:9px 0;border-bottom:1px dashed var(--line);"><div style="font-weight:600;font-size:13px;">${region}</div><div style="font-size:12.5px;color:var(--ink);margin-top:2px;">12 meses: ${yn(a.y12)} · Impediu atividade: ${yn(a.impede)} · Últimos 7 dias: ${yn(a.y7)}</div></div>`;
+  });
  }
  if(!rows.length) return '';
  return `<div style="margin-top:6px;padding-top:2px;">${rows.join('')}</div>`;
@@ -92,6 +99,24 @@ function buildReportText(p){
   } else if(k==='mjoa'){
    const band = mjoaBand(r.raw, r.maxPossible);
    lines.push('Resultado: '+r.raw+'/'+(r.maxPossible||18)+' pontos — '+band.label);
+   lines.push('');
+   qdef.data.forEach((sec,i)=>{
+    const [domain, opts] = sec;
+    const v = ans ? ans[i] : null;
+    lines.push(domain+': '+((v!==null&&v!==undefined)?opts[v]:'(não respondido)'));
+   });
+  } else if(k==='nmq'){
+   lines.push('Resultado: '+r.y12count+' regiões com sintoma nos últimos 12 meses · '+r.y7count+' nos últimos 7 dias · '+r.impedeCount+' com impacto funcional');
+   if(r.regions && r.regions.length) lines.push('Regiões afetadas: '+r.regions.join(', '));
+   lines.push('');
+   qdef.items.forEach((region,i)=>{
+    const a = ans ? ans[i] : null;
+    const yn=(v)=> v===1?'Sim':(v===0?'Não':'—');
+    if(!a || a.y12===null || a.y12===undefined){ lines.push(region+': não respondido'); return; }
+    lines.push(region+' — 12 meses: '+yn(a.y12)+' · Impediu atividade: '+yn(a.impede)+' · Últimos 7 dias: '+yn(a.y7));
+   });
+  } else if(k==='ict'){
+   lines.push('Resultado: '+r.n+' itens respondidos. ATENÇÃO: a classificação oficial do ICT/WAI depende de uma tabela de conversão específica não replicada automaticamente aqui — confira as respostas abaixo manualmente contra a versão oficial antes de citar uma categoria (baixa/moderada/boa/ótima) no laudo.');
    lines.push('');
    qdef.data.forEach((sec,i)=>{
     const [domain, opts] = sec;
@@ -423,6 +448,99 @@ const LEFS_ITEMS = [
  "Sua atividade de trabalho habitual, do jeito que você normalmente faz."
 ];
 
+const SFI_SECTIONS = [
+ ["Intensidade da dor na coluna (do pescoço até a lombar), no momento",[
+  "Não sinto dor na coluna",
+  "A dor é leve",
+  "A dor é moderada",
+  "A dor é intensa",
+  "A dor é a pior imaginável"]],
+ ["Cuidados pessoais (vestir-se, lavar-se, calçar-se)",[
+  "Nenhuma dificuldade por causa da coluna",
+  "Um pouco de dificuldade, mas consigo fazer sozinho(a)",
+  "Preciso de mais tempo ou de algum cuidado extra",
+  "Preciso de ajuda em parte das tarefas",
+  "Preciso de ajuda para a maioria das tarefas"]],
+ ["Levantar objetos do chão",[
+  "Nenhuma dificuldade por causa da coluna",
+  "Um pouco de dificuldade com objetos pesados",
+  "Dificuldade moderada, evito objetos pesados",
+  "Só consigo levantar objetos leves",
+  "Não consigo levantar nada do chão"]],
+ ["Andar",[
+  "A coluna não me impede de andar qualquer distância",
+  "A coluna me impede de andar longas distâncias",
+  "A coluna me impede de andar distâncias moderadas",
+  "A coluna me impede de andar mesmo distâncias curtas",
+  "Praticamente não consigo andar por causa da coluna"]],
+ ["Sentar",[
+  "Consigo sentar o tempo que quiser sem problema",
+  "Consigo sentar por longos períodos, com algum desconforto",
+  "A dor me impede de sentar por mais de 1 hora",
+  "A dor me impede de sentar por mais de 30 minutos",
+  "A dor me impede quase totalmente de sentar"]],
+ ["Ficar em pé",[
+  "Consigo ficar em pé o tempo que quiser sem problema",
+  "Consigo ficar em pé por longos períodos, com algum desconforto",
+  "A dor me impede de ficar em pé por mais de 1 hora",
+  "A dor me impede de ficar em pé por mais de 30 minutos",
+  "A dor me impede quase totalmente de ficar em pé"]],
+ ["Dormir",[
+  "Meu sono nunca é perturbado pela dor na coluna",
+  "Meu sono é ocasionalmente perturbado",
+  "Meu sono é perturbado com frequência",
+  "Durmo poucas horas por causa da dor",
+  "A dor me impede quase totalmente de dormir"]],
+ ["Atividades sociais e de lazer",[
+  "Minha vida social é normal, sem limitação pela coluna",
+  "Minha vida social é normal, mas com algum desconforto",
+  "Reduzi algumas atividades sociais/de lazer por causa da coluna",
+  "Reduzi bastante minhas atividades sociais/de lazer",
+  "Praticamente não tenho vida social por causa da coluna"]],
+ ["Viajar (dirigir, andar de carro ou ônibus)",[
+  "Consigo viajar para qualquer lugar sem problema",
+  "Consigo viajar, mas com algum desconforto",
+  "A dor limita viagens mais longas",
+  "A dor limita até viagens curtas",
+  "A dor praticamente me impede de viajar"]],
+ ["Capacidade de realizar seu trabalho habitual",[
+  "Nenhuma limitação da coluna para o trabalho",
+  "Pequena limitação, consigo fazer quase tudo",
+  "Limitação moderada, preciso adaptar tarefas",
+  "Limitação importante, faço poucas das tarefas habituais",
+  "Não consigo realizar o trabalho habitual por causa da coluna"]]
+];
+
+const NMQ_REGIONS = ["Pescoço","Ombros","Região torácica (parte de cima das costas)","Cotovelos","Região lombar (parte de baixo das costas)","Punhos e mãos","Quadril e coxas","Joelhos","Tornozelos e pés"];
+
+const ICT_SECTIONS = [
+ ["Capacidade atual para o trabalho, comparada à melhor capacidade de toda a sua vida (0 a 10)",[
+  "0 — Totalmente incapaz de trabalhar","1","2","3","4","5 — Capacidade moderada","6","7","8","9","10 — Capacidade no seu melhor momento de vida"]],
+ ["Capacidade de trabalho em relação às exigências físicas do seu trabalho",[
+  "Muito baixa","Baixa","Moderada","Boa","Muito boa"]],
+ ["Capacidade de trabalho em relação às exigências mentais do seu trabalho",[
+  "Muito baixa","Baixa","Moderada","Boa","Muito boa"]],
+ ["Número de doenças atuais diagnosticadas por um médico",[
+  "Nenhuma","1 doença","2 doenças","3 doenças","4 doenças","5 ou mais doenças"]],
+ ["Perda estimada da capacidade de trabalho por causa de doenças",[
+  "Consigo trabalhar normalmente, sem limitações",
+  "Consigo trabalhar, mas com algumas limitações",
+  "Às vezes preciso reduzir o ritmo ou mudar a forma de trabalhar",
+  "Preciso frequentemente reduzir o ritmo ou mudar a forma de trabalhar",
+  "Só consigo trabalhar em tempo parcial ou reduzido",
+  "Sou incapaz de trabalhar"]],
+ ["Dias de afastamento do trabalho por doença nos últimos 12 meses",[
+  "Nenhum dia","Até 9 dias","De 10 a 24 dias","De 25 a 99 dias","De 100 a 365 dias"]],
+ ["Sua própria expectativa sobre sua capacidade de trabalho dentro de 2 anos",[
+  "Pouco provável que eu consiga trabalhar","Não tenho certeza","Provável que eu consiga trabalhar"]],
+ ["Você sente prazer nas suas atividades diárias?",[
+  "Sim, quase sempre","Às vezes","Raramente","Quase nunca"]],
+ ["Você se sente ativo(a) e alerta no seu dia a dia?",[
+  "Sim, quase sempre","Às vezes","Raramente","Quase nunca"]],
+ ["Você tem esperança em relação ao futuro?",[
+  "Sim, quase sempre","Às vezes","Raramente","Quase nunca"]]
+];
+
 const QUESTIONNAIRES = {
  odi: { title:"Índice de Incapacidade de Oswestry (ODI)", short:"ODI · coluna lombar", type:"sections", data:ODI_SECTIONS,
   intro:"Estas perguntas são sobre a parte de baixo das suas costas (a coluna lombar) e como a dor atrapalha o seu dia a dia. Escolha a frase que mais parece com a sua situação hoje — não existe resposta certa ou errada.",
@@ -472,9 +590,27 @@ const QUESTIONNAIRES = {
   score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); const pct=a.length?100-((sum/(a.length*4))*100):0; return {pct, raw:sum, n:a.length}; } },
  lefs: { title:"LEFS (Lower Extremity Functional Scale)", short:"LEFS · função de quadril, joelho e marcha", type:"likert", items:LEFS_ITEMS, opts:LEFS_OPTS,
   intro:"Estas perguntas são sobre atividades do dia a dia que dependem das suas pernas — agachar, subir escada, ficar em pé, andar, entre outras. Escolha a opção que mais parece com o que você consegue fazer hoje.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); const pct=a.length?100-((sum/(a.length*4))*100):0; return {pct, raw:sum, n:a.length}; } }
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); const pct=a.length?100-((sum/(a.length*4))*100):0; return {pct, raw:sum, n:a.length}; } },
+ sfi: { title:"SFI-10-Br (Spine Functional Index)", short:"SFI-10 · coluna como unidade única", type:"sections", data:SFI_SECTIONS,
+  intro:"Estas perguntas são sobre a sua coluna como um todo — pescoço, meio das costas e parte de baixo das costas juntos, não separados. Escolha a frase que mais parece com a sua situação hoje.",
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
+ nmq: { title:"Questionário Nórdico de Sintomas Osteomusculares (QNSO/NMQ)", short:"NMQ · mapa corporal de sintomas", type:"nmq", items:NMQ_REGIONS,
+  intro:"Estas perguntas são sobre dor, desconforto ou dormência em diferentes partes do corpo — nos últimos 12 meses e nos últimos 7 dias.",
+  score(answers){
+   let y12count=0, y7count=0, impedeCount=0, n=0; const regions=[];
+   answers.forEach((a,i)=>{
+    if(a && a.y12!==null && a.y12!==undefined){
+     n++;
+     if(a.y12===1){ y12count++; regions.push(NMQ_REGIONS[i]); if(a.impede===1) impedeCount++; if(a.y7===1) y7count++; }
+    }
+   });
+   return {y12count, y7count, impedeCount, n, regions};
+  } },
+ ict: { title:"ICT (Índice de Capacidade para o Trabalho / WAI)", short:"ICT-WAI · capacidade e prognóstico laboral", type:"sections", data:ICT_SECTIONS,
+  intro:"Estas perguntas são sobre sua capacidade de trabalhar hoje, comparada a outros momentos da sua vida, e sobre doenças e afastamentos recentes.",
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); return {pct:null, raw:null, n:a.length}; } }
 };
-const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs"];
+const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","sfi","nmq","ict"];
 
 /* ---------- Supabase data layer ---------- */
 function newUuid(){
@@ -662,9 +798,25 @@ wizard(){
    <label class="field" style="margin-top:6px;">Nota (0 = não consigo fazer, 10 = consigo fazer como antes)</label>
    <div class="slider-wrap"><div class="slider-val" id="sliderVal">${existing.score??0}</div>
    <input type="range" min="0" max="10" step="1" value="${existing.score??0}" id="sliderInput"></div>`;
+ } else if(q.type==='nmq'){
+  const ex = state.qAnswers[state.qIndex] || {y12:null, impede:null, y7:null};
+  const yn = (field, label)=>`<div style="margin-bottom:16px;">
+    <div style="font-size:14px;color:var(--ink);margin-bottom:8px;">${label}</div>
+    <button class="opt nmq-opt" data-field="${field}" data-val="1" style="display:inline-block;width:auto;margin:0 8px 0 0;padding:11px 20px;${ex[field]===1?'border-color:var(--navy);background:#EEF1F7;font-weight:600;':''}">Sim</button>
+    <button class="opt nmq-opt" data-field="${field}" data-val="0" style="display:inline-block;width:auto;margin:0;padding:11px 20px;${ex[field]===0?'border-color:var(--navy);background:#EEF1F7;font-weight:600;':''}">Não</button>
+   </div>`;
+  body = `<div class="qtext">${current}</div>`
+   + yn('y12','Nos últimos 12 meses, você teve dor, desconforto ou dormência nessa região?')
+   + yn('impede','Isso impediu suas atividades normais (trabalho, casa ou lazer) em algum momento?')
+   + yn('y7','Você teve esse problema nos últimos 7 dias?');
  }
  const psfsOk = q.type==='psfs' && state.qAnswers[state.qIndex] && state.qAnswers[state.qIndex].activity && state.qAnswers[state.qIndex].activity.trim();
- const nextDisabled = q.type==='psfs' ? !psfsOk : (state.qAnswers[state.qIndex]===null||state.qAnswers[state.qIndex]===undefined);
+ const nmqEx = state.qAnswers[state.qIndex];
+ const nmqOk = q.type==='nmq' && nmqEx && nmqEx.y12!==null && (nmqEx.y12===0 || (nmqEx.impede!==null && nmqEx.y7!==null));
+ let nextDisabled;
+ if(q.type==='psfs') nextDisabled = !psfsOk;
+ else if(q.type==='nmq') nextDisabled = !nmqOk;
+ else nextDisabled = (state.qAnswers[state.qIndex]===null||state.qAnswers[state.qIndex]===undefined);
  return `
  <div class="topbar"><div class="brand">${q.title}<small>${state.qIndex+1} de ${total}</small></div></div>
  <main>
@@ -758,6 +910,12 @@ dashboard(){
     const band = mjoaBand(r.raw, r.maxPossible);
     pillsHtml = pillHtml(band);
     detail = `${r.raw}/${r.maxPossible||18} pontos · ${r.n} domínios respondidos (≥15 leve · 12-14 moderada · ≤11 grave, escala de 18)`;
+   } else if(k==='nmq'){
+    pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">${r.y12count} regiões</span>`;
+    detail = `${r.y12count} regiões com sintoma nos últimos 12 meses · ${r.y7count} nos últimos 7 dias · ${r.impedeCount} com impacto funcional${r.regions&&r.regions.length?(' — '+r.regions.join(', ')):''}`;
+   } else if(k==='ict'){
+    pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">sem escore automático</span>`;
+    detail = `${r.n} itens respondidos — classificação oficial do ICT/WAI depende de tabela de conversão específica; confira as respostas manualmente antes de citar categoria no laudo`;
    } else {
     const band = cifBand(r.pct);
     pillsHtml = pillHtml(band) + ` <span class="pill" style="background:var(--gray-bg);color:var(--gray-txt);margin-left:4px;">CIF ${band.q}</span>`;
@@ -1002,6 +1160,15 @@ function bind(){
     $('nextBtn').disabled = !ok;
    };
    slider.oninput = ()=>{ $('sliderVal').textContent = slider.value; state.qAnswers[state.qIndex].score = parseInt(slider.value); };
+  } else if(q.type==='nmq'){
+   if(!state.qAnswers[state.qIndex]) state.qAnswers[state.qIndex] = {y12:null, impede:null, y7:null};
+   document.querySelectorAll('.nmq-opt').forEach(el=>{
+    el.onclick = ()=>{
+     const field = el.dataset.field;
+     state.qAnswers[state.qIndex][field] = parseInt(el.dataset.val);
+     render();
+    };
+   });
   } else {
    document.querySelectorAll('.opt').forEach(el=>{ el.onclick = ()=>{ state.qAnswers[state.qIndex] = parseInt(el.dataset.val); render(); }; });
   }
