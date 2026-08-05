@@ -88,7 +88,7 @@ function buildReportText(p){
   if(k==='eva'){
    qdef.items.forEach((label,i)=>{ lines.push(label+': '+(r.answers[i]??'-')+'/10'); });
   } else if(k==='psfs'){
-   (r.activities||[]).forEach(a=>{ if(a) lines.push((a.activity||'(sem nome)')+': '+(a.score??'-')+'/10'); });
+   (r.activities||[]).forEach(a=>{ if(a && !a.skipped && a.activity) lines.push((a.activity||'(sem nome)')+': '+(a.score??'-')+'/10'); });
   } else if(k==='dn4'){
    lines.push('Resultado: '+r.raw+'/7 itens positivos (corte usual: \u22653/7 sugere dor neuropática)');
    lines.push('');
@@ -787,19 +787,24 @@ wizard(){
  } else if(q.type==='sliders'){
   const val = state.qAnswers[state.qIndex];
   body = `<div class="qtext">${current}</div>
-   <div style="display:flex;justify-content:space-between;color:var(--muted);font-size:12px;margin-bottom:10px;"><span>Sem dor</span><span>Dor máxima</span></div>
-   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px;">
     ${[0,1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="opt" data-val="${n}" style="text-align:center;padding:16px 0;margin-bottom:0;font-weight:700;font-size:18px;${val===n?'border-color:var(--navy);background:#EEF1F7;':''}">${n}</button>`).join('')}
-   </div>`;
+   </div>
+   <p class="sub" style="margin-bottom:0;">0 = sem dor nenhuma · 10 = a pior dor que você já sentiu</p>`;
  } else if(q.type==='psfs'){
   const existing = state.qAnswers[state.qIndex] || {activity:'', score:null};
+  const skipped = existing.skipped;
   body = `<div class="qtext">${current}</div>
+   ${skipped ? `<p class="sub">Você optou por não citar essa atividade. Pode seguir para a próxima tela.</p>` : `
    <label class="field">Nome da atividade</label>
    <input type="text" id="psfsActivity" placeholder="Ex.: subir escadas, carregar sacola de compras..." value="${existing.activity||''}">
-   <label class="field" style="margin-top:14px;">Nota (0 = não consigo fazer, 10 = consigo fazer como antes)</label>
-   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+   <label class="field" style="margin-top:14px;">Nota</label>
+   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px;">
     ${[0,1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="opt psfs-num" data-val="${n}" style="text-align:center;padding:14px 0;margin-bottom:0;font-weight:700;font-size:16px;${existing.score===n?'border-color:var(--navy);background:#EEF1F7;':''}">${n}</button>`).join('')}
-   </div>`;
+   </div>
+   <p class="sub" style="margin-bottom:0;">0 = não consigo fazer de jeito nenhum · 10 = consigo fazer como fazia antes</p>
+   `}
+   ${state.qIndex>0 ? `<button class="btn btn-ghost" id="psfsSkipBtn" style="width:100%;margin-top:14px;">${skipped?'Na verdade, quero citar uma atividade':'Não tenho mais nenhuma atividade para citar'}</button>` : ''}`;
  } else if(q.type==='nmq'){
   const ex = state.qAnswers[state.qIndex] || {y12:null, impede:null, y7:null};
   const yn = (field, label)=>`<div style="margin-bottom:16px;">
@@ -807,12 +812,17 @@ wizard(){
     <button class="opt nmq-opt" data-field="${field}" data-val="1" style="display:inline-block;width:auto;margin:0 8px 0 0;padding:11px 20px;${ex[field]===1?'border-color:var(--navy);background:#EEF1F7;font-weight:600;':''}">Sim</button>
     <button class="opt nmq-opt" data-field="${field}" data-val="0" style="display:inline-block;width:auto;margin:0;padding:11px 20px;${ex[field]===0?'border-color:var(--navy);background:#EEF1F7;font-weight:600;':''}">Não</button>
    </div>`;
-  body = `<div class="qtext">${current}</div>`
-   + yn('y12','Nos últimos 12 meses, você teve dor, desconforto ou dormência nessa região?')
-   + yn('impede','Isso impediu suas atividades normais (trabalho, casa ou lazer) em algum momento?')
-   + yn('y7','Você teve esse problema nos últimos 7 dias?');
+  let inner = yn('y12','Nos últimos 12 meses, você teve dor, desconforto ou dormência nessa região?');
+  if(ex.y12===1){
+   inner += yn('impede','Isso impediu suas atividades normais (trabalho, casa ou lazer) em algum momento?');
+   inner += yn('y7','Você teve esse problema nos últimos 7 dias?');
+  } else if(ex.y12===0){
+   inner += `<p class="sub" style="margin-top:-6px;">Como você respondeu "Não", pode seguir para a próxima região.</p>`;
+  }
+  body = `<div class="qtext">${current}</div>` + inner;
  }
- const psfsOk = q.type==='psfs' && state.qAnswers[state.qIndex] && state.qAnswers[state.qIndex].activity && state.qAnswers[state.qIndex].activity.trim() && state.qAnswers[state.qIndex].score!==null && state.qAnswers[state.qIndex].score!==undefined;
+ const psfsAns = state.qAnswers[state.qIndex];
+ const psfsOk = q.type==='psfs' && psfsAns && (psfsAns.skipped || (psfsAns.activity && psfsAns.activity.trim() && psfsAns.score!==null && psfsAns.score!==undefined));
  const nmqEx = state.qAnswers[state.qIndex];
  const nmqOk = q.type==='nmq' && nmqEx && nmqEx.y12!==null && (nmqEx.y12===0 || (nmqEx.impede!==null && nmqEx.y7!==null));
  let nextDisabled;
@@ -899,11 +909,11 @@ dashboard(){
     pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">4 condições</span>`;
    } else if(k==='psfs'){
     detail = (r.activities||[]).map((a,i)=>{
-     if(!a) return '';
+     if(!a || a.skipped || !a.activity) return '';
      const b = psfsItemBand(a.score??0);
      return `<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:13px;"><span>${a.activity||'(sem nome)'}</span><span class="pill" style="color:${b.txt};background:${b.bg}">${a.score??'-'}/10</span></div>`;
     }).join('');
-    pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">${(r.activities||[]).filter(a=>a).length} atividades</span>`;
+    pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">${(r.activities||[]).filter(a=>a && !a.skipped && a.activity).length} atividades</span>`;
    } else if(k==='dn4'){
     const band = dn4Band(r.raw);
     pillsHtml = pillHtml(band);
@@ -1149,15 +1159,21 @@ function bind(){
   const q = QUESTIONNAIRES[state.qKey];
   const total = q.type==='sections'? q.data.length : q.items.length;
   if(q.type==='psfs'){
-   if(!state.qAnswers[state.qIndex]) state.qAnswers[state.qIndex] = {activity:'', score:null};
+   if(!state.qAnswers[state.qIndex]) state.qAnswers[state.qIndex] = {activity:'', score:null, skipped:false};
    const activityInput = $('psfsActivity');
-   activityInput.oninput = ()=>{
-    state.qAnswers[state.qIndex].activity = activityInput.value;
-    const ok = activityInput.value.trim().length>0 && state.qAnswers[state.qIndex].score!==null && state.qAnswers[state.qIndex].score!==undefined;
-    $('nextBtn').disabled = !ok;
-   };
+   if(activityInput){
+    activityInput.oninput = ()=>{
+     state.qAnswers[state.qIndex].activity = activityInput.value;
+     const ok = activityInput.value.trim().length>0 && state.qAnswers[state.qIndex].score!==null && state.qAnswers[state.qIndex].score!==undefined;
+     $('nextBtn').disabled = !ok;
+    };
+   }
    document.querySelectorAll('.psfs-num').forEach(el=>{
     el.onclick = ()=>{ state.qAnswers[state.qIndex].score = parseInt(el.dataset.val); render(); };
+   });
+   $('psfsSkipBtn') && ($('psfsSkipBtn').onclick = ()=>{
+    state.qAnswers[state.qIndex].skipped = !state.qAnswers[state.qIndex].skipped;
+    render();
    });
   } else if(q.type==='nmq'){
    if(!state.qAnswers[state.qIndex]) state.qAnswers[state.qIndex] = {y12:null, impede:null, y7:null};
