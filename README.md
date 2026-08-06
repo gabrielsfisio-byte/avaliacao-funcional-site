@@ -126,6 +126,12 @@ diária, esporte/lazer e qualidade de vida), mas com menos itens por domínio qu
 versões oficiais de 40 itens. Para o nível máximo de fidelidade psicométrica em um caso
 específico, considere aplicar a versão oficial completa.
 
+**HADS:** para simplificar a aplicação, todos os 14 itens usam a mesma escala de resposta
+(Nunca/Raramente/Às vezes/Frequentemente). A versão oficial tem uma redação de opções
+específica e diferente para cada item (ex.: "Sim, com certeza/Geralmente/Não muito/Nunca").
+O cálculo das subescalas de Ansiedade e Depressão (incluindo a inversão dos itens
+positivos) segue a lógica oficial — só a redação das opções de resposta foi padronizada.
+
 Antes de usar os resultados em um laudo que vá para o INSS ou para o Judiciário, vale
 comparar o texto das perguntas com as versões validadas publicadas — principalmente o
 item de pontuação invertida do TSK-13, que varia de numeração entre versões.

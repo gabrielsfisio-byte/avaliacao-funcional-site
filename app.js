@@ -138,13 +138,22 @@ function buildReportText(p){
     const v = ans ? ans[i] : null;
     lines.push(domain+': '+((v!==null&&v!==undefined)?opts[v]:'(não respondido)'));
    });
+  } else if(k==='hads'){
+   lines.push('Resultado: Ansiedade = '+r.anxSum+'/21 pontos · Depressão = '+r.depSum+'/21 pontos. Referência usual por subescala: 0-7 normal, 8-10 leve/limítrofe, \u226511 clinicamente significativo.');
+   lines.push('');
+   qdef.items.forEach((item,i)=>{
+    const v = ans ? ans[i] : null;
+    lines.push((i<7?'[Ansiedade] ':'[Depressão] ')+item+' '+((v!==null&&v!==undefined)?qdef.opts[v]:'(não respondido)'));
+   });
   } else {
    const band = cifBand(r.pct);
    let summary = 'Resultado: '+r.pct.toFixed(0)+'% — '+band.label+' (qualificador CIF '+band.q+')';
    if(k==='pcs'){ summary += ' · '+r.raw+'/52 pontos (corte clínico usual: \u226530)'; }
    if(k==='fabq'){ summary += ' · '+r.raw+'/42 pontos (corte usual: \u226534)'; }
+   if(k==='fabqpa'){ summary += ' · '+r.raw+'/24 pontos'; }
    if(k==='rmdq'){ summary += ' · '+r.raw+'/24 itens marcados'; }
    if(k==='hit6'){ summary += ' · '+r.raw+' pontos, soma simplificada (o escore oficial usa pesos por item — confira antes de citar categoria de impacto no laudo)'; }
+   if(k==='comi'){ summary += ' · '+r.raw+'/'+r.maxPossible+' pontos'; }
    lines.push(summary);
    lines.push('');
    if(qdef.type==='sections'){
@@ -685,6 +694,53 @@ const HIT6_ITEMS = [
  "Nas últimas 4 semanas, as dores de cabeça limitaram sua capacidade de se concentrar no trabalho ou em atividades diárias?"
 ];
 
+/* ---- FABQ-PA (subescala de atividade física, complementar à subescala de trabalho já existente) ---- */
+const FABQ_PA_ITEMS = [
+ "Minha dor foi causada por atividade física.",
+ "A atividade física agrava minha dor.",
+ "A atividade física poderia prejudicar minha coluna.",
+ "Eu não deveria fazer atividades físicas que agravem minha dor."
+];
+
+/* ---- COMI-Back (Core Outcome Measures Index) ---- */
+const COMI_MAX = [10,10,4,4,4,3,1];
+const COMI_SECTIONS = [
+ ["Intensidade da dor nas costas na última semana (0 a 10)",[
+  "0 — Nenhuma dor","1","2","3","4","5 — Dor moderada","6","7","8","9","10 — A pior dor imaginável"]],
+ ["Intensidade da dor na perna (se houver) na última semana (0 a 10)",[
+  "0 — Nenhuma dor","1","2","3","4","5 — Dor moderada","6","7","8","9","10 — A pior dor imaginável"]],
+ ["Nas duas últimas semanas, quanto sua dor nas costas interferiu nas suas atividades diárias habituais?",[
+  "Nada","Um pouco","Moderadamente","Bastante","Extremamente"]],
+ ["Como você avalia seu bem-estar geral relacionado ao seu problema de coluna, na última semana?",[
+  "Muito bom","Bom","Regular","Ruim","Muito ruim"]],
+ ["Como você avalia sua qualidade de vida em geral, na última semana?",[
+  "Muito boa","Boa","Regular","Ruim","Muito ruim"]],
+ ["Quantos dias você ficou afastado do trabalho ou de suas atividades habituais por causa da coluna, nos últimos 6 meses?",[
+  "Nenhum dia","1 a 7 dias","8 a 30 dias","Mais de 30 dias"]],
+ ["Você mudou de emprego ou de tarefas de trabalho por causa da sua coluna?",[
+  "Não","Sim"]]
+];
+
+/* ---- HADS (Hospital Anxiety and Depression Scale) ---- */
+const HADS_OPTS = ["Nunca","Raramente","Às vezes","Frequentemente"];
+const HADS_ITEMS = [
+ "Eu me sinto tenso(a) ou contraído(a).",
+ "Sinto uma espécie de medo, como se algo ruim fosse acontecer.",
+ "Fico preocupado(a) com pensamentos ruins.",
+ "Consigo ficar sentado(a) tranquilamente e me sentir relaxado(a).",
+ "Sinto uma espécie de aperto ou desconforto no estômago.",
+ "Sinto-me inquieto(a), como se não pudesse ficar parado(a).",
+ "Tenho sensações repentinas de pânico.",
+ "Ainda sinto prazer nas coisas que eu costumava gostar de fazer.",
+ "Sou capaz de rir e ver o lado divertido das coisas.",
+ "Sinto-me alegre(a).",
+ "Sinto-me mais lento(a), como se fizesse tudo mais devagar que antes.",
+ "Perdi o interesse em cuidar da minha aparência.",
+ "Aguardo as coisas com prazer e entusiasmo.",
+ "Consigo apreciar um bom livro, programa de rádio ou TV."
+];
+const HADS_REVERSE = [3,7,8,9,12,13];
+
 const QUESTIONNAIRES = {
  odi: { title:"Índice de Incapacidade de Oswestry (ODI)", short:"ODI · coluna lombar", type:"sections", data:ODI_SECTIONS,
   intro:"Estas perguntas são sobre a parte de baixo das suas costas (a coluna lombar) e como a dor atrapalha o seu dia a dia. Escolha a frase que mais parece com a sua situação hoje — não existe resposta certa ou errada.",
@@ -784,9 +840,33 @@ const QUESTIONNAIRES = {
   score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*3))*100:0, raw:sum, n:a.length}; } },
  hit6: { title:"HIT-6 (Headache Impact Test)", short:"HIT-6 · impacto da dor de cabeça/enxaqueca", type:"likert", items:HIT6_ITEMS, opts:HIT6_OPTS,
   intro:"Estas perguntas são sobre o quanto as dores de cabeça ou enxaquecas afetam seu dia a dia.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } }
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
+ fabqpa: { title:"FABQ — subescala atividade física", short:"FABQ-AF · medo-evitação de atividade física", type:"likert", items:FABQ_PA_ITEMS, opts:FABQ_OPTS,
+  intro:"Estas perguntas são sobre a sua opinião a respeito de atividade física e da sua dor — não é sobre o que você sente no corpo, é sobre o que você pensa e acredita. É a mesma lógica do questionário sobre trabalho que talvez você já tenha respondido, mas agora sobre atividade física em geral.",
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*6))*100:0, raw:sum, n:a.length}; } },
+ comi: { title:"COMI-Back (Core Outcome Measures Index)", short:"COMI-Back · desfecho multidimensional de coluna", type:"sections", data:COMI_SECTIONS,
+  intro:"Estas perguntas são sobre dor, bem-estar e o impacto do seu problema de coluna no trabalho e na vida, de forma resumida.",
+  score(answers){
+   let raw=0, maxPossible=0, n=0;
+   answers.forEach((v,i)=>{ if(v!==null && v!==undefined){ raw+=v; maxPossible+=COMI_MAX[i]; n++; } });
+   return {pct: maxPossible?(raw/maxPossible)*100:0, raw, n, maxPossible};
+  } },
+ hads: { title:"HADS (Hospital Anxiety and Depression Scale)", short:"HADS · ansiedade e depressão", type:"likert", items:HADS_ITEMS, opts:HADS_OPTS,
+  intro:"Estas perguntas são sobre como você tem se sentido emocionalmente nos últimos dias. Não é sobre o problema físico, é sobre o seu estado de humor.",
+  score(answers){
+   let sum=0, n=0, anxSum=0, anxN=0, depSum=0, depN=0;
+   answers.forEach((v,i)=>{
+    if(v!==null && v!==undefined){
+     n++;
+     const val = HADS_REVERSE.includes(i) ? (3-v) : v;
+     sum += val;
+     if(i<7){ anxSum+=val; anxN++; } else { depSum+=val; depN++; }
+    }
+   });
+   return {pct: n?(sum/(n*3))*100:0, raw:sum, n, anxSum, anxN, depSum, depN};
+  } }
 };
-const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","sfi","nmq","ict","fiqr","wpi","sss","hoos","koos","fss","psqi","hit6"];
+const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","sfi","nmq","ict","fiqr","wpi","sss","hoos","koos","fss","psqi","hit6","fabqpa","comi","hads"];
 
 /* ---------- Supabase data layer ---------- */
 function newUuid(){
@@ -1112,14 +1192,21 @@ dashboard(){
     const sssHigh = r.raw>=5;
     pillsHtml = `<span class="pill" style="color:${sssHigh?'var(--r3-txt)':'var(--r1-txt)'};background:${sssHigh?'var(--r3-bg)':'var(--r1-bg)'}">SSS ${r.raw}/12</span>`;
     detail = `${r.raw} pontos. Critério ACR de fibromialgia: SSS ≥5 (com WPI ≥7) ou SSS ≥9 (com WPI 4-6) — ver resultado do WPI`;
+   } else if(k==='hads'){
+    const anxBand = r.anxSum>=11?{txt:'var(--r3-txt)',bg:'var(--r3-bg)',label:'Clinicamente significativa'}:(r.anxSum>=8?{txt:'var(--r2-txt)',bg:'var(--r2-bg)',label:'Leve/limítrofe'}:{txt:'var(--r1-txt)',bg:'var(--r1-bg)',label:'Normal'});
+    const depBand = r.depSum>=11?{txt:'var(--r3-txt)',bg:'var(--r3-bg)',label:'Clinicamente significativa'}:(r.depSum>=8?{txt:'var(--r2-txt)',bg:'var(--r2-bg)',label:'Leve/limítrofe'}:{txt:'var(--r1-txt)',bg:'var(--r1-bg)',label:'Normal'});
+    pillsHtml = `<span class="pill" style="color:${anxBand.txt};background:${anxBand.bg}">Ansiedade ${r.anxSum}/21</span> <span class="pill" style="color:${depBand.txt};background:${depBand.bg};margin-left:4px;">Depressão ${r.depSum}/21</span>`;
+    detail = `Ansiedade: ${anxBand.label} · Depressão: ${depBand.label} (referência: 0-7 normal, 8-10 leve, ≥11 clinicamente significativo, por subescala)`;
    } else {
     const band = cifBand(r.pct);
     pillsHtml = pillHtml(band) + ` <span class="pill" style="background:var(--gray-bg);color:var(--gray-txt);margin-left:4px;">CIF ${band.q}</span>`;
     detail = `${r.pct.toFixed(0)}% · ${r.n} itens respondidos`;
     if(k==='pcs'){ detail += ` · ${r.raw}/52 pontos (corte clínico usual: ≥30)`; }
     if(k==='fabq'){ detail += ` · ${r.raw}/42 pontos (corte usual: ≥34, alto medo-evitação)`; }
+    if(k==='fabqpa'){ detail += ` · ${r.raw}/24 pontos`; }
     if(k==='rmdq'){ detail += ` · ${r.raw}/24 itens marcados`; }
     if(k==='hit6'){ detail += ` · ${r.raw} pontos, soma simplificada (escore oficial usa pesos por item — confira antes de citar no laudo)`; }
+    if(k==='comi'){ detail += ` · ${r.raw}/${r.maxPossible} pontos`; }
    }
    const detailKey = p.id+'::'+k;
    const isOpen = !!state.openDetails[detailKey];
