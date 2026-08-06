@@ -110,6 +110,22 @@ afastamento). Antes de citar uma classificação (capacidade baixa/moderada/boa/
 laudo, aplique manualmente a tabela de conversão oficial do manual do ICT sobre as
 respostas registradas.
 
+**Atenção especial ao HIT-6:** o escore oficial usa uma tabela de pesos específica por
+item e por resposta (não é uma soma simples de 0 a 4 por item). O sistema mostra a soma
+simplificada só como referência — confira a tabela oficial antes de citar a categoria de
+impacto (pouco/algum/substancial/severo) no laudo.
+
+**WPI e SSS** são instrumentos complementares que juntos compõem o critério diagnóstico
+oficial de fibromialgia (ACR 2010/2016): considera-se o critério preenchido quando
+WPI ≥ 7 e SSS ≥ 5, OU WPI entre 4 e 6 e SSS ≥ 9. O sistema mostra o resultado de cada um
+separadamente — a combinação dos dois deve ser feita por você.
+
+**HOOS e KOOS** aqui implementados são versões condensadas (16 itens cada), cobrindo os
+mesmos cinco domínios das versões oficiais completas (dor, sintomas, atividades de vida
+diária, esporte/lazer e qualidade de vida), mas com menos itens por domínio que as
+versões oficiais de 40 itens. Para o nível máximo de fidelidade psicométrica em um caso
+específico, considere aplicar a versão oficial completa.
+
 Antes de usar os resultados em um laudo que vá para o INSS ou para o Judiciário, vale
 comparar o texto das perguntas com as versões validadas publicadas — principalmente o
 item de pontuação invertida do TSK-13, que varia de numeração entre versões.

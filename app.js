@@ -123,12 +123,28 @@ function buildReportText(p){
     const v = ans ? ans[i] : null;
     lines.push(domain+': '+((v!==null&&v!==undefined)?opts[v]:'(não respondido)'));
    });
+  } else if(k==='wpi'){
+   lines.push('Resultado: WPI = '+r.raw+'/19 regiões com dor na última semana. Critério ACR de fibromialgia: WPI \u22657 (com SSS \u22655) OU WPI 4-6 (com SSS \u22659) — ver resultado do SSS.');
+   lines.push('');
+   qdef.items.forEach((region,i)=>{
+    const v = ans ? ans[i] : null;
+    lines.push(region+': '+(v===1?'Sim':(v===0?'Não':'(não respondido)')));
+   });
+  } else if(k==='sss'){
+   lines.push('Resultado: SSS = '+r.raw+'/12 pontos. Critério ACR de fibromialgia: SSS \u22655 (com WPI \u22657) OU SSS \u22659 (com WPI 4-6) — ver resultado do WPI.');
+   lines.push('');
+   qdef.data.forEach((sec,i)=>{
+    const [domain, opts] = sec;
+    const v = ans ? ans[i] : null;
+    lines.push(domain+': '+((v!==null&&v!==undefined)?opts[v]:'(não respondido)'));
+   });
   } else {
    const band = cifBand(r.pct);
    let summary = 'Resultado: '+r.pct.toFixed(0)+'% — '+band.label+' (qualificador CIF '+band.q+')';
    if(k==='pcs'){ summary += ' · '+r.raw+'/52 pontos (corte clínico usual: \u226530)'; }
    if(k==='fabq'){ summary += ' · '+r.raw+'/42 pontos (corte usual: \u226534)'; }
    if(k==='rmdq'){ summary += ' · '+r.raw+'/24 itens marcados'; }
+   if(k==='hit6'){ summary += ' · '+r.raw+' pontos, soma simplificada (o escore oficial usa pesos por item — confira antes de citar categoria de impacto no laudo)'; }
    lines.push(summary);
    lines.push('');
    if(qdef.type==='sections'){
@@ -541,6 +557,134 @@ const ICT_SECTIONS = [
   "Sim, quase sempre","Às vezes","Raramente","Quase nunca"]]
 ];
 
+/* ---- FIQR (Fibromyalgia Impact Questionnaire — Revised) ---- */
+const FIQR_FUNC_OPTS = ["0 — Nenhuma dificuldade","1","2","3","4","5 — Dificuldade moderada","6","7","8","9","10 — Não consigo fazer"];
+const FIQR_IMPACT_OPTS = ["0 — Nada","1","2","3","4","5 — Moderadamente","6","7","8","9","10 — Totalmente"];
+const FIQR_SYMPTOM_OPTS = ["0 — Nenhum(a)","1","2","3","4","5 — Moderado(a)","6","7","8","9","10 — O pior possível"];
+const FIQR_ITEMS = [
+ ["Fazer compras",FIQR_FUNC_OPTS],
+ ["Lavar e passar roupa",FIQR_FUNC_OPTS],
+ ["Preparar refeições",FIQR_FUNC_OPTS],
+ ["Lavar louça à mão, passar pano ou aspirar",FIQR_FUNC_OPTS],
+ ["Arrumar a cama",FIQR_FUNC_OPTS],
+ ["Andar longas distâncias",FIQR_FUNC_OPTS],
+ ["Visitar amigos ou familiares",FIQR_FUNC_OPTS],
+ ["Fazer atividades ao ar livre (jardim, caminhada)",FIQR_FUNC_OPTS],
+ ["Trocar de posição na cama para dormir",FIQR_FUNC_OPTS],
+ ["O quanto a fibromialgia te impede de atingir seus objetivos pessoais e profissionais",FIQR_IMPACT_OPTS],
+ ["O quanto você se sente sobrecarregado(a) ou estressado(a) por causa da fibromialgia",FIQR_IMPACT_OPTS],
+ ["Dor",FIQR_SYMPTOM_OPTS],
+ ["Falta de energia (fadiga)",FIQR_SYMPTOM_OPTS],
+ ["Rigidez",FIQR_SYMPTOM_OPTS],
+ ["Qualidade do sono (sono não reparador)",FIQR_SYMPTOM_OPTS],
+ ["Depressão",FIQR_SYMPTOM_OPTS],
+ ["Problemas de memória",FIQR_SYMPTOM_OPTS],
+ ["Ansiedade",FIQR_SYMPTOM_OPTS],
+ ["Sensibilidade ao toque",FIQR_SYMPTOM_OPTS],
+ ["Equilíbrio",FIQR_SYMPTOM_OPTS],
+ ["Sensibilidade a ruído, luz, frio ou perfume",FIQR_SYMPTOM_OPTS]
+];
+
+/* ---- WPI (Widespread Pain Index — critério ACR de fibromialgia) ---- */
+const WPI_REGIONS = [
+ "Ombro esquerdo","Ombro direito","Braço (parte de cima) esquerdo","Braço (parte de cima) direito",
+ "Antebraço esquerdo","Antebraço direito","Quadril/nádega/trocânter esquerdo","Quadril/nádega/trocânter direito",
+ "Mandíbula esquerda","Mandíbula direita","Tórax","Abdome","Pescoço","Costas (parte de cima)","Costas (parte de baixo)",
+ "Coxa esquerda","Coxa direita","Perna esquerda (abaixo do joelho)","Perna direita (abaixo do joelho)"
+];
+
+/* ---- SSS (Symptom Severity Scale — companheira do WPI) ---- */
+const SSS_SCALE_OPTS = ["Nenhum problema","Leve ou ocasional","Moderado, presente na maior parte do tempo","Severo, generalizado, constante, prejudica muito a vida"];
+const SSS_OTHER_OPTS = ["Nenhum desses sintomas (nos últimos 6 meses)","Poucos desses sintomas","Um número moderado desses sintomas","Muitos desses sintomas"];
+const SSS_SECTIONS = [
+ ["Fadiga",SSS_SCALE_OPTS],
+ ["Sono não reparador (dormir e não sentir que descansou)",SSS_SCALE_OPTS],
+ ["Sintomas cognitivos (memória, concentração, \"névoa mental\")",SSS_SCALE_OPTS],
+ ["Outros sintomas nos últimos 6 meses (dor de cabeça, dor/cólica abdominal, depressão, e outros sintomas somáticos)",SSS_OTHER_OPTS]
+];
+
+/* ---- HOOS (quadril) e KOOS (joelho) — mesma escala de dificuldade ---- */
+const JOINT_DIFF_OPTS = ["Nenhuma dificuldade","Dificuldade leve","Dificuldade moderada","Dificuldade grave","Dificuldade extrema / incapaz"];
+const HOOS_ITEMS = [
+ "Dor ao girar/pivotear apoiado no quadril",
+ "Dor ao ficar com o quadril totalmente esticado",
+ "Dor ao subir ou descer escadas",
+ "Dor à noite, na cama, por causa do quadril",
+ "Rigidez no quadril ao acordar de manhã",
+ "Amplitude de movimento limitada no quadril",
+ "Ruídos ou estalos no quadril",
+ "Descer escadas",
+ "Subir escadas",
+ "Levantar-se de uma posição sentada",
+ "Ficar em pé por longos períodos",
+ "Calçar meias ou sapatos",
+ "Correr",
+ "Agachar-se",
+ "Dificuldade em geral com o quadril nas suas atividades do dia a dia",
+ "Falta de confiança no seu quadril"
+];
+const KOOS_ITEMS = [
+ "Dor ao girar/pivotear apoiado no joelho",
+ "Dor ao ficar com o joelho totalmente esticado",
+ "Dor ao subir ou descer escadas",
+ "Dor à noite, na cama, por causa do joelho",
+ "Rigidez no joelho ao acordar de manhã",
+ "Inchaço no joelho",
+ "Sensação de estalos ou crepitação no joelho",
+ "Descer escadas",
+ "Subir escadas",
+ "Levantar-se de uma posição sentada",
+ "Ficar em pé por longos períodos",
+ "Agachar-se",
+ "Correr",
+ "Ajoelhar-se",
+ "Dificuldade em geral com o joelho nas suas atividades do dia a dia",
+ "Falta de confiança no seu joelho"
+];
+
+/* ---- FSS (Fatigue Severity Scale) ---- */
+const FSS_OPTS = ["1 — Discordo totalmente","2","3","4 — Neutro","5","6","7 — Concordo totalmente"];
+const FSS_ITEMS = [
+ "Minha motivação é menor quando estou com fadiga.",
+ "O exercício físico me deixa fatigado(a).",
+ "Fico facilmente fatigado(a).",
+ "A fadiga interfere no meu funcionamento físico.",
+ "A fadiga me causa problemas frequentes.",
+ "A fadiga impede que eu mantenha um funcionamento físico contínuo.",
+ "A fadiga interfere na realização de certas tarefas e responsabilidades.",
+ "A fadiga é um dos meus três sintomas mais incapacitantes.",
+ "A fadiga interfere no meu trabalho, na família ou na vida social."
+];
+
+/* ---- PSQI (Índice de Qualidade do Sono de Pittsburgh) — 7 componentes ---- */
+const PSQI_SECTIONS = [
+ ["Como você classificaria a qualidade geral do seu sono?",[
+  "Muito boa","Boa","Ruim","Muito ruim"]],
+ ["Nas últimas semanas, quanto tempo você geralmente demora para pegar no sono?",[
+  "15 minutos ou menos","16 a 30 minutos","31 a 60 minutos","Mais de 60 minutos"]],
+ ["Quantas horas de sono de verdade (não só na cama) você tem, em geral, por noite?",[
+  "Mais de 7 horas","6 a 7 horas","5 a 6 horas","Menos de 5 horas"]],
+ ["Quantas vezes por semana seu sono foi realmente eficiente, com poucas interrupções?",[
+  "A maioria das noites","Bastante frequente","Às vezes","Raramente ou nunca"]],
+ ["Com que frequência algo perturba seu sono (acordar de madrugada, ir ao banheiro, sentir frio/calor, dor, pesadelos)?",[
+  "Nenhuma vez nas últimas semanas","Menos de 1 vez por semana","1 a 2 vezes por semana","3 ou mais vezes por semana"]],
+ ["Com que frequência você usa algum remédio (com ou sem receita) para conseguir dormir?",[
+  "Nenhuma vez nas últimas semanas","Menos de 1 vez por semana","1 a 2 vezes por semana","3 ou mais vezes por semana"]],
+ ["Com que frequência você tem dificuldade de ficar acordado(a) durante atividades do dia (dirigir, comer, socializar) ou falta de entusiasmo para fazer as coisas?",[
+  "Nenhuma vez nas últimas semanas","Menos de 1 vez por semana","1 a 2 vezes por semana","3 ou mais vezes por semana"]]
+];
+
+/* ---- HIT-6 (Headache Impact Test) ---- */
+const HIT6_OPTS = ["Nunca","Raramente","Algumas vezes","Muito frequentemente","Sempre"];
+const HIT6_ITEMS = [
+ "Quando você tem dor de cabeça, a intensidade da dor é forte?",
+ "As dores de cabeça limitam sua capacidade de realizar atividades diárias habituais (trabalho, escola, casa, social)?",
+ "Quando você tem dor de cabeça, você deseja se deitar?",
+ "Nas últimas 4 semanas, você se sentiu cansado(a) demais para trabalhar ou fazer atividades diárias por causa da dor de cabeça?",
+ "Nas últimas 4 semanas, você se sentiu enjoado(a) ou irritado(a) por causa da dor de cabeça?",
+ "Nas últimas 4 semanas, as dores de cabeça limitaram sua capacidade de se concentrar no trabalho ou em atividades diárias?"
+];
+
 const QUESTIONNAIRES = {
  odi: { title:"Índice de Incapacidade de Oswestry (ODI)", short:"ODI · coluna lombar", type:"sections", data:ODI_SECTIONS,
   intro:"Estas perguntas são sobre a parte de baixo das suas costas (a coluna lombar) e como a dor atrapalha o seu dia a dia. Escolha a frase que mais parece com a sua situação hoje — não existe resposta certa ou errada.",
@@ -608,9 +752,41 @@ const QUESTIONNAIRES = {
   } },
  ict: { title:"ICT (Índice de Capacidade para o Trabalho / WAI)", short:"ICT-WAI · capacidade e prognóstico laboral", type:"sections", data:ICT_SECTIONS,
   intro:"Estas perguntas são sobre sua capacidade de trabalhar hoje, comparada a outros momentos da sua vida, e sobre doenças e afastamentos recentes.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); return {pct:null, raw:null, n:a.length}; } }
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); return {pct:null, raw:null, n:a.length}; } },
+ fiqr: { title:"FIQR (Fibromyalgia Impact Questionnaire — Revised)", short:"FIQR · impacto global da fibromialgia", type:"sections", data:FIQR_ITEMS,
+  intro:"Estas perguntas são sobre como a fibromialgia afeta suas atividades, seu bem-estar geral e seus sintomas. Para cada uma, escolha o número de 0 a 10 que melhor descreve você nos últimos 7 dias.",
+  score(answers){
+   const func = answers.slice(0,9).filter(v=>v!==null&&v!==undefined);
+   const imp = answers.slice(9,11).filter(v=>v!==null&&v!==undefined);
+   const sym = answers.slice(11,21).filter(v=>v!==null&&v!==undefined);
+   const funcSum = func.reduce((s,v)=>s+v,0), impSum = imp.reduce((s,v)=>s+v,0), symSum = sym.reduce((s,v)=>s+v,0);
+   const total = (funcSum/3) + impSum + (symSum/2);
+   const n = func.length+imp.length+sym.length;
+   return {pct: total, raw: total, n};
+  } },
+ wpi: { title:"WPI (Widespread Pain Index — critério de fibromialgia)", short:"WPI · mapa corporal de dor (ACR)", type:"yesno", items:WPI_REGIONS,
+  intro:"Nesta última semana, você teve dor em cada uma destas regiões do corpo? Responda Sim ou Não para cada uma. Esse instrumento, junto com o próximo (SSS), compõe o critério diagnóstico oficial de fibromialgia (ACR 2010/2016).",
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {raw:sum, n:a.length}; } },
+ sss: { title:"SSS (Symptom Severity Scale — companheira do WPI)", short:"SSS · gravidade dos sintomas (ACR)", type:"sections", data:SSS_SECTIONS,
+  intro:"Estas perguntas são sobre a gravidade de alguns sintomas nos últimos dias/meses. Junto com o WPI (mapa de dor), formam o critério diagnóstico oficial de fibromialgia.",
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {raw:sum, n:a.length}; } },
+ hoos: { title:"HOOS (Hip disability and Osteoarthritis Outcome Score)", short:"HOOS · quadril", type:"likert", items:HOOS_ITEMS, opts:JOINT_DIFF_OPTS,
+  intro:"Estas perguntas são sobre dor, rigidez e dificuldade para usar o seu quadril em atividades do dia a dia.",
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
+ koos: { title:"KOOS (Knee injury and Osteoarthritis Outcome Score)", short:"KOOS · joelho", type:"likert", items:KOOS_ITEMS, opts:JOINT_DIFF_OPTS,
+  intro:"Estas perguntas são sobre dor, rigidez e dificuldade para usar o seu joelho em atividades do dia a dia.",
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
+ fss: { title:"FSS (Fatigue Severity Scale)", short:"FSS · gravidade da fadiga", type:"likert", items:FSS_ITEMS, opts:FSS_OPTS,
+  intro:"Estas perguntas são sobre o quanto a fadiga (cansaço) afeta sua vida. Escolha o quanto você concorda com cada frase.",
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+(v+1),0); const mean=a.length?sum/a.length:0; const pct=a.length?((mean-1)/6)*100:0; return {pct, raw:sum, n:a.length, mean}; } },
+ psqi: { title:"PSQI (Índice de Qualidade do Sono de Pittsburgh)", short:"PSQI · qualidade do sono", type:"sections", data:PSQI_SECTIONS,
+  intro:"Estas perguntas são sobre a qualidade do seu sono nas últimas semanas.",
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*3))*100:0, raw:sum, n:a.length}; } },
+ hit6: { title:"HIT-6 (Headache Impact Test)", short:"HIT-6 · impacto da dor de cabeça/enxaqueca", type:"likert", items:HIT6_ITEMS, opts:HIT6_OPTS,
+  intro:"Estas perguntas são sobre o quanto as dores de cabeça ou enxaquecas afetam seu dia a dia.",
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } }
 };
-const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","sfi","nmq","ict"];
+const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","sfi","nmq","ict","fiqr","wpi","sss","hoos","koos","fss","psqi","hit6"];
 
 /* ---------- Supabase data layer ---------- */
 function newUuid(){
@@ -928,6 +1104,14 @@ dashboard(){
    } else if(k==='ict'){
     pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">sem escore automático</span>`;
     detail = `${r.n} itens respondidos — classificação oficial do ICT/WAI depende de tabela de conversão específica; confira as respostas manualmente antes de citar categoria no laudo`;
+   } else if(k==='wpi'){
+    const wpiHigh = r.raw>=7;
+    pillsHtml = `<span class="pill" style="color:${wpiHigh?'var(--r3-txt)':'var(--r1-txt)'};background:${wpiHigh?'var(--r3-bg)':'var(--r1-bg)'}">WPI ${r.raw}/19</span>`;
+    detail = `${r.raw} regiões com dor na última semana. Critério ACR de fibromialgia: WPI ≥7 (com SSS ≥5) ou WPI 4-6 (com SSS ≥9) — ver resultado do SSS`;
+   } else if(k==='sss'){
+    const sssHigh = r.raw>=5;
+    pillsHtml = `<span class="pill" style="color:${sssHigh?'var(--r3-txt)':'var(--r1-txt)'};background:${sssHigh?'var(--r3-bg)':'var(--r1-bg)'}">SSS ${r.raw}/12</span>`;
+    detail = `${r.raw} pontos. Critério ACR de fibromialgia: SSS ≥5 (com WPI ≥7) ou SSS ≥9 (com WPI 4-6) — ver resultado do WPI`;
    } else {
     const band = cifBand(r.pct);
     pillsHtml = pillHtml(band) + ` <span class="pill" style="background:var(--gray-bg);color:var(--gray-txt);margin-left:4px;">CIF ${band.q}</span>`;
@@ -935,6 +1119,7 @@ dashboard(){
     if(k==='pcs'){ detail += ` · ${r.raw}/52 pontos (corte clínico usual: ≥30)`; }
     if(k==='fabq'){ detail += ` · ${r.raw}/42 pontos (corte usual: ≥34, alto medo-evitação)`; }
     if(k==='rmdq'){ detail += ` · ${r.raw}/24 itens marcados`; }
+    if(k==='hit6'){ detail += ` · ${r.raw} pontos, soma simplificada (escore oficial usa pesos por item — confira antes de citar no laudo)`; }
    }
    const detailKey = p.id+'::'+k;
    const isOpen = !!state.openDetails[detailKey];
