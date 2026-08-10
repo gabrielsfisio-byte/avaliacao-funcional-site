@@ -20,6 +20,18 @@ function dn4Band(raw){
   if(raw>=3) return {label:'Sugestivo de dor neuropática', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
   return {label:'Não sugestivo', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
 }
+function csiBand(raw){
+  if(raw>=60) return {label:'Extrema', txt:'var(--r4-txt)', bg:'var(--r4-bg)'};
+  if(raw>=50) return {label:'Grave', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
+  if(raw>=40) return {label:'Moderada', txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
+  if(raw>=30) return {label:'Leve', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
+  return {label:'Subclínica', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
+}
+function orebroBand(raw){
+  if(raw>=50) return {label:'Alto risco de cronificação', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
+  if(raw>=40) return {label:'Risco moderado', txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
+  return {label:'Baixo risco', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
+}
 function mjoaBand(raw, maxPossible){
   const scaled = maxPossible ? (raw/maxPossible)*18 : raw;
   if(scaled>=15) return {label:'Mielopatia leve', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
@@ -144,6 +156,23 @@ function buildReportText(p){
    qdef.items.forEach((item,i)=>{
     const v = ans ? ans[i] : null;
     lines.push((i<7?'[Ansiedade] ':'[Depressão] ')+item+' '+((v!==null&&v!==undefined)?qdef.opts[v]:'(não respondido)'));
+   });
+  } else if(k==='csi'){
+   const band = csiBand(r.raw);
+   lines.push('Resultado: '+r.raw+'/100 pontos — Sensibilização central: '+band.label+' (referência: <30 subclínica, 30-39 leve, 40-49 moderada, 50-59 grave, \u226560 extrema).');
+   lines.push('');
+   qdef.items.forEach((item,i)=>{
+    const v = ans ? ans[i] : null;
+    lines.push(item+' '+((v!==null&&v!==undefined)?qdef.opts[v]:'(não respondido)'));
+   });
+  } else if(k==='orebro'){
+   const band = orebroBand(r.raw);
+   lines.push('Resultado: '+r.raw+'/100 (normalizado) — '+band.label+' (referência aproximada: \u226550 alto risco de cronificação/não retorno ao trabalho). ATENÇÃO: os pontos de corte oficiais do Örebro foram validados sobre a soma bruta dos itens originais; aqui o resultado foi normalizado para 0-100 pela pontuação máxima possível — trate como aproximação e não como o escore oficial exato.');
+   lines.push('');
+   qdef.data.forEach((sec,i)=>{
+    const [domain, opts] = sec;
+    const v = ans ? ans[i] : null;
+    lines.push(domain+': '+((v!==null&&v!==undefined)?opts[v]:'(não respondido)'));
    });
   } else {
    const band = cifBand(r.pct);
@@ -539,6 +568,8 @@ const SFI_SECTIONS = [
 const NMQ_REGIONS = ["Pescoço","Ombros","Região torácica (parte de cima das costas)","Cotovelos","Região lombar (parte de baixo das costas)","Punhos e mãos","Quadril e coxas","Joelhos","Tornozelos e pés"];
 
 const ICT_SECTIONS = [
+ ["As exigências do seu trabalho são, principalmente:",[
+  "Principalmente mentais","Principalmente físicas","Tanto mentais quanto físicas, igualmente"]],
  ["Capacidade atual para o trabalho, comparada à melhor capacidade de toda a sua vida (0 a 10)",[
   "0 — Totalmente incapaz de trabalhar","1","2","3","4","5 — Capacidade moderada","6","7","8","9","10 — Capacidade no seu melhor momento de vida"]],
  ["Capacidade de trabalho em relação às exigências físicas do seu trabalho",[
@@ -546,24 +577,24 @@ const ICT_SECTIONS = [
  ["Capacidade de trabalho em relação às exigências mentais do seu trabalho",[
   "Muito baixa","Baixa","Moderada","Boa","Muito boa"]],
  ["Número de doenças atuais diagnosticadas por um médico",[
-  "Nenhuma","1 doença","2 doenças","3 doenças","4 doenças","5 ou mais doenças"]],
- ["Perda estimada da capacidade de trabalho por causa de doenças",[
-  "Consigo trabalhar normalmente, sem limitações",
-  "Consigo trabalhar, mas com algumas limitações",
+  "Nenhuma","1 doença","2 ou 3 doenças","4 ou mais doenças"]],
+ ["Seu problema de saúde é um obstáculo para o seu trabalho atual?",[
+  "Não há obstáculo / não tenho doenças",
+  "Consigo fazer meu trabalho, mas ele me causa alguns sintomas",
   "Às vezes preciso reduzir o ritmo ou mudar a forma de trabalhar",
-  "Preciso frequentemente reduzir o ritmo ou mudar a forma de trabalhar",
-  "Só consigo trabalhar em tempo parcial ou reduzido",
-  "Sou incapaz de trabalhar"]],
- ["Dias de afastamento do trabalho por doença nos últimos 12 meses",[
+  "Frequentemente preciso reduzir o ritmo ou mudar a forma de trabalhar",
+  "Por causa da doença, só consigo trabalhar em tempo parcial",
+  "Na minha opinião, sou totalmente incapaz de trabalhar"]],
+ ["Quantos dias inteiros você ficou afastado do trabalho por um problema de saúde nos últimos 12 meses?",[
   "Nenhum dia","Até 9 dias","De 10 a 24 dias","De 25 a 99 dias","De 100 a 365 dias"]],
- ["Sua própria expectativa sobre sua capacidade de trabalho dentro de 2 anos",[
-  "Pouco provável que eu consiga trabalhar","Não tenho certeza","Provável que eu consiga trabalhar"]],
- ["Você sente prazer nas suas atividades diárias?",[
-  "Sim, quase sempre","Às vezes","Raramente","Quase nunca"]],
- ["Você se sente ativo(a) e alerta no seu dia a dia?",[
-  "Sim, quase sempre","Às vezes","Raramente","Quase nunca"]],
- ["Você tem esperança em relação ao futuro?",[
-  "Sim, quase sempre","Às vezes","Raramente","Quase nunca"]]
+ ["Você acredita que, do ponto de vista da sua saúde, conseguirá fazer seu trabalho atual dentro de 2 anos?",[
+  "Pouco provável","Não tenho certeza","Relativamente certo que sim"]],
+ ["Nos últimos tempos, você tem conseguido sentir prazer nas suas atividades diárias habituais?",[
+  "Nunca","Raramente","Às vezes","Frequentemente","Sempre"]],
+ ["Nos últimos tempos, você tem se sentido ativo(a) e alerta?",[
+  "Nunca","Raramente","Às vezes","Frequentemente","Sempre"]],
+ ["Nos últimos tempos, você tem se sentido cheio(a) de esperança em relação ao futuro?",[
+  "Nunca","Raramente","Às vezes","Frequentemente","Sempre"]]
 ];
 
 /* ---- FIQR (Fibromyalgia Impact Questionnaire — Revised) ---- */
@@ -741,6 +772,56 @@ const HADS_ITEMS = [
 ];
 const HADS_REVERSE = [3,7,8,9,12,13];
 
+/* ---- CSI (Central Sensitization Inventory) — Parte A, 25 itens ---- */
+const CSI_OPTS = ["Nunca","Raramente","Às vezes","Frequentemente","Sempre"];
+const CSI_ITEMS = [
+ "Sinto dor no corpo.",
+ "Sinto-me cansado(a) com facilidade.",
+ "Não durmo bem.",
+ "Sinto dor de cabeça tensional.",
+ "Sinto dor ou queimação ao urinar.",
+ "Não me sinto descansado(a) pela manhã, mesmo após dormir muitas horas.",
+ "Sinto dores musculares generalizadas pelo corpo.",
+ "Tenho cólicas ou dor abdominal.",
+ "Sinto-me deprimido(a).",
+ "Tenho pouca energia.",
+ "Sinto tensão nos músculos do pescoço e ombros.",
+ "Sinto dor na mandíbula.",
+ "Alguns cheiros, como perfumes, me deixam tonto(a) ou enjoado(a).",
+ "Preciso urinar frequentemente.",
+ "Minhas pernas ficam inquietas quando estou tentando dormir.",
+ "Tenho dificuldade de concentração.",
+ "Já tive uma lesão do tipo \"chicote\" (movimento brusco de pescoço, como em acidente de carro).",
+ "Minha pele fica facilmente irritada quando algo toca nela.",
+ "Tenho crises de pânico.",
+ "Sinto ansiedade.",
+ "Bebidas alcoólicas me deixam muito mal.",
+ "Quando criança, sofri algum tipo de abuso físico ou emocional.",
+ "Sinto dor nas articulações.",
+ "Sinto que algo não está bem no meu corpo, sem saber exatamente o quê.",
+ "Sofro de dor crônica em alguma parte do corpo."
+];
+
+/* ---- Örebro Musculoskeletal Pain Screening Questionnaire — versão curta (10 itens, 0 a 10) ---- */
+const OREBRO_SCALE_RISK = ["0 — Nenhuma chance","1","2","3","4","5 — Chance moderada","6","7","8","9","10 — Certeza absoluta"];
+const OREBRO_SCALE_PAIN = ["0 — Nenhuma dor","1","2","3","4","5 — Dor moderada","6","7","8","9","10 — A pior dor possível"];
+const OREBRO_SCALE_INTERFERE = ["0 — Nada","1","2","3","4","5 — Moderadamente","6","7","8","9","10 — Totalmente"];
+const OREBRO_SCALE_MOOD = ["0 — Nem um pouco","1","2","3","4","5 — Moderadamente","6","7","8","9","10 — Extremamente"];
+const OREBRO_SECTIONS = [
+ ["Em quantos dos últimos 7 dias você conseguiu realizar suas atividades normais (trabalho, casa, lazer), mesmo com dor?",[
+  "0 — Nenhum dia","1","2","3","4","5 — Metade dos dias","6","7 — Todos os dias"]],
+ ["Qual foi a intensidade média da sua dor na última semana?",OREBRO_SCALE_PAIN],
+ ["Qual foi a intensidade da sua dor no pior momento do último mês?",OREBRO_SCALE_PAIN],
+ ["Quantas vezes, nos últimos 3 meses, você teve episódios de dor como o atual?",[
+  "Nenhuma vez, é a primeira vez","Uma vez antes","2 a 5 vezes","Mais de 5 vezes","A dor está sempre presente"]],
+ ["Na sua opinião, qual é a chance de sua dor atual se tornar persistente (permanente)?",OREBRO_SCALE_RISK],
+ ["Na sua opinião, qual é a chance de você conseguir voltar ao seu trabalho normal dentro dos próximos meses?",OREBRO_SCALE_RISK],
+ ["O quanto a dor interferiu no seu trabalho ou nas suas atividades diárias na última semana?",OREBRO_SCALE_INTERFERE],
+ ["O quanto você se sentiu triste ou deprimido(a) por causa da dor na última semana?",OREBRO_SCALE_MOOD],
+ ["O quanto a tensão ou a ansiedade te afetou na última semana?",OREBRO_SCALE_MOOD],
+ ["O quanto você acha que deveria evitar suas atividades normais (trabalho, esforço físico) por medo de piorar a dor ou se machucar?",OREBRO_SCALE_INTERFERE]
+];
+
 const QUESTIONNAIRES = {
  odi: { title:"Índice de Incapacidade de Oswestry (ODI)", short:"ODI · coluna lombar", type:"sections", data:ODI_SECTIONS,
   intro:"Estas perguntas são sobre a parte de baixo das suas costas (a coluna lombar) e como a dor atrapalha o seu dia a dia. Escolha a frase que mais parece com a sua situação hoje — não existe resposta certa ou errada.",
@@ -808,7 +889,28 @@ const QUESTIONNAIRES = {
   } },
  ict: { title:"ICT (Índice de Capacidade para o Trabalho / WAI)", short:"ICT-WAI · capacidade e prognóstico laboral", type:"sections", data:ICT_SECTIONS,
   intro:"Estas perguntas são sobre sua capacidade de trabalhar hoje, comparada a outros momentos da sua vida, e sobre doenças e afastamentos recentes.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); return {pct:null, raw:null, n:a.length}; } },
+  score(answers){
+   const v = answers;
+   const n = v.filter(x=>x!==null&&x!==undefined).length;
+   if(n < 11) return {raw:null, n, incomplete:true};
+   const demandType = v[0];
+   const item1 = v[1];
+   const physPts = v[2]+1, mentPts = v[3]+1;
+   let item2;
+   if(demandType===0) item2 = physPts*0.5 + mentPts*1.5;
+   else if(demandType===1) item2 = physPts*1.5 + mentPts*0.5;
+   else item2 = physPts + mentPts;
+   const diseaseTable = [7,5,3,1];
+   const item3 = diseaseTable[v[4]];
+   const item4 = 6 - v[5];
+   const item5 = 5 - v[6];
+   const prognosisTable = [1,4,7];
+   const item6 = prognosisTable[v[7]];
+   const mrSum = v[8] + v[9] + v[10];
+   const item7 = mrSum<=3?1:(mrSum<=6?2:(mrSum<=9?3:4));
+   const total = Math.round(item1 + item2 + item3 + item4 + item5 + item6 + item7);
+   return {raw:total, n, incomplete:false};
+  } },
  fiqr: { title:"FIQR (Fibromyalgia Impact Questionnaire — Revised)", short:"FIQR · impacto global da fibromialgia", type:"sections", data:FIQR_ITEMS,
   intro:"Estas perguntas são sobre como a fibromialgia afeta suas atividades, seu bem-estar geral e seus sintomas. Para cada uma, escolha o número de 0 a 10 que melhor descreve você nos últimos 7 dias.",
   score(answers){
@@ -864,9 +966,21 @@ const QUESTIONNAIRES = {
     }
    });
    return {pct: n?(sum/(n*3))*100:0, raw:sum, n, anxSum, anxN, depSum, depN};
+  } },
+ csi: { title:"CSI (Central Sensitization Inventory)", short:"CSI · sensibilização central", type:"likert", items:CSI_ITEMS, opts:CSI_OPTS,
+  intro:"Estas perguntas são sobre sintomas físicos e emocionais que você pode ter sentido recentemente. Algumas parecem não ter relação direta com o seu problema principal — responda igual assim, com sinceridade.",
+  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
+ orebro: { title:"Örebro (versão curta) — risco de cronificação", short:"Örebro-curto · prognóstico de retorno ao trabalho", type:"sections", data:OREBRO_SECTIONS,
+  intro:"Estas perguntas são sobre a sua dor, seu humor e sua própria expectativa sobre o futuro. Elas ajudam a estimar o risco de a situação se prolongar, não descrevem só o que você sente hoje.",
+  score(answers){
+   const OREBRO_MAX = [7,10,10,4,10,10,10,10,10,10];
+   let raw=0, maxPossible=0, n=0;
+   answers.forEach((v,i)=>{ if(v!==null && v!==undefined){ raw+=v; maxPossible+=OREBRO_MAX[i]; n++; } });
+   const scaled = maxPossible ? (raw/maxPossible)*100 : 0;
+   return {pct:scaled, raw:Math.round(scaled), n, maxPossible};
   } }
 };
-const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","sfi","nmq","ict","fiqr","wpi","sss","hoos","koos","fss","psqi","hit6","fabqpa","comi","hads"];
+const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","sfi","nmq","ict","fiqr","wpi","sss","hoos","koos","fss","psqi","hit6","fabqpa","comi","hads","csi","orebro"];
 
 /* ---------- Supabase data layer ---------- */
 function newUuid(){
@@ -1197,6 +1311,14 @@ dashboard(){
     const depBand = r.depSum>=11?{txt:'var(--r3-txt)',bg:'var(--r3-bg)',label:'Clinicamente significativa'}:(r.depSum>=8?{txt:'var(--r2-txt)',bg:'var(--r2-bg)',label:'Leve/limítrofe'}:{txt:'var(--r1-txt)',bg:'var(--r1-bg)',label:'Normal'});
     pillsHtml = `<span class="pill" style="color:${anxBand.txt};background:${anxBand.bg}">Ansiedade ${r.anxSum}/21</span> <span class="pill" style="color:${depBand.txt};background:${depBand.bg};margin-left:4px;">Depressão ${r.depSum}/21</span>`;
     detail = `Ansiedade: ${anxBand.label} · Depressão: ${depBand.label} (referência: 0-7 normal, 8-10 leve, ≥11 clinicamente significativo, por subescala)`;
+   } else if(k==='csi'){
+    const band = csiBand(r.raw);
+    pillsHtml = pillHtml(band);
+    detail = `${r.raw}/100 pontos (referência: &lt;30 subclínica, 30-39 leve, 40-49 moderada, 50-59 grave, ≥60 extrema)`;
+   } else if(k==='orebro'){
+    const band = orebroBand(r.raw);
+    pillsHtml = pillHtml(band);
+    detail = `${r.raw}/100 normalizado (referência aproximada: ≥50 alto risco — escore oficial validado sobre soma bruta, aqui normalizado; trate como aproximação)`;
    } else {
     const band = cifBand(r.pct);
     pillsHtml = pillHtml(band) + ` <span class="pill" style="background:var(--gray-bg);color:var(--gray-txt);margin-left:4px;">CIF ${band.q}</span>`;

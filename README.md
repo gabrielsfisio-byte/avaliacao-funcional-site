@@ -132,6 +132,17 @@ específica e diferente para cada item (ex.: "Sim, com certeza/Geralmente/Não m
 O cálculo das subescalas de Ansiedade e Depressão (incluindo a inversão dos itens
 positivos) segue a lógica oficial — só a redação das opções de resposta foi padronizada.
 
+**CSI (Central Sensitization Inventory):** a versão da Parte A (25 itens, sintomas) foi
+escrita a partir do conteúdo geral conhecido do instrumento. A Parte B oficial (checklist
+de diagnósticos prévios como fibromialgia, síndrome do intestino irritável, etc.), que
+normalmente acompanha o CSI mas não entra no escore, não foi incluída aqui.
+
+**Örebro (versão curta):** o escore oficial (corte usual ≥50 sugerindo alto risco de
+cronificação/não retorno ao trabalho) foi validado sobre a soma bruta dos itens originais.
+Como os domínios aqui têm amplitudes diferentes entre si, o resultado mostrado é
+**normalizado** para uma escala de 0 a 100 — trate o número como uma aproximação da
+gravidade, não como o escore oficial exato validado na literatura.
+
 Antes de usar os resultados em um laudo que vá para o INSS ou para o Judiciário, vale
 comparar o texto das perguntas com as versões validadas publicadas — principalmente o
 item de pontuação invertida do TSK-13, que varia de numeração entre versões.
