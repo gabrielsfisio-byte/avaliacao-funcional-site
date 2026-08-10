@@ -38,12 +38,21 @@ function mjoaBand(raw, maxPossible){
   if(scaled>=12) return {label:'Mielopatia moderada', txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
   return {label:'Mielopatia grave', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
 }
+function ictBand(total){
+  if(total>=44) return {label:'Excelente', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
+  if(total>=37) return {label:'Boa', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
+  if(total>=28) return {label:'Moderada', txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
+  return {label:'Baixa (recomenda-se restaurar a capacidade)', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
+}
 function psfsItemBand(v){
   if(v>=7) return {label:'Preservada', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
   if(v>=4) return {label:'Moderada', txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
   return {label:'Grave', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
 }
 function pillHtml(band){ return `<span class="pill" style="color:${band.txt};background:${band.bg}">${band.label}</span>`; }
+// Uma resposta é "válida para contagem" se não for null/undefined e não for o marcador
+// especial 'NA' (usado quando a pessoa marca "Não se aplica a mim / pular esta pergunta").
+function isAnswered(v){ return v!==null && v!==undefined && v!=='NA'; }
 
 function renderItemDetail(k, r){
  const q = QUESTIONNAIRES[k];
@@ -54,20 +63,20 @@ function renderItemDetail(k, r){
   rows = q.data.map((sec,i)=>{
    const [domain, opts] = sec;
    const v = ans[i];
-   const txt = (v!==null && v!==undefined) ? opts[v] : '<span style="color:var(--muted)">não respondido</span>';
+   const txt = v==='NA' ? '<span style="color:var(--muted)">não se aplica / pulou</span>' : ((v!==null && v!==undefined) ? opts[v] : '<span style="color:var(--muted)">não respondido</span>');
    return `<div style="padding:9px 0;border-bottom:1px dashed var(--line);"><div style="font-weight:600;font-size:13px;">${domain}</div><div style="font-size:13px;color:var(--ink);margin-top:2px;">${txt}</div></div>`;
   });
  } else if(q.type==='likert'){
   rows = q.items.map((item,i)=>{
    const opts = q.optsPerItem ? q.optsPerItem[i] : q.opts;
    const v = ans[i];
-   const txt = (v!==null && v!==undefined) ? opts[v] : '<span style="color:var(--muted)">não respondido</span>';
+   const txt = v==='NA' ? '<span style="color:var(--muted)">não se aplica / pulou</span>' : ((v!==null && v!==undefined) ? opts[v] : '<span style="color:var(--muted)">não respondido</span>');
    return `<div style="padding:9px 0;border-bottom:1px dashed var(--line);"><div style="font-size:13px;color:var(--muted);">${item}</div><div style="font-size:13px;font-weight:600;margin-top:2px;">${txt}</div></div>`;
   });
  } else if(q.type==='yesno'){
   rows = q.items.map((item,i)=>{
    const v = ans[i];
-   const txt = (v===1) ? 'Sim' : (v===0 ? 'Não' : '<span style="color:var(--muted)">não respondido</span>');
+   const txt = v==='NA' ? '<span style="color:var(--muted)">não se aplica / pulou</span>' : ((v===1) ? 'Sim' : (v===0 ? 'Não' : '<span style="color:var(--muted)">não respondido</span>'));
    return `<div style="padding:9px 0;border-bottom:1px dashed var(--line);display:flex;justify-content:space-between;gap:14px;"><div style="font-size:13px;">${item}</div><div style="font-size:13px;font-weight:600;white-space:nowrap;">${txt}</div></div>`;
   });
  } else if(q.type==='nmq'){
@@ -115,7 +124,7 @@ function buildReportText(p){
    qdef.data.forEach((sec,i)=>{
     const [domain, opts] = sec;
     const v = ans ? ans[i] : null;
-    lines.push(domain+': '+((v!==null&&v!==undefined)?opts[v]:'(não respondido)'));
+    lines.push(domain+': '+((isAnswered(v))?opts[v]:'(não respondido)'));
    });
   } else if(k==='nmq'){
    lines.push('Resultado: '+r.y12count+' regiões com sintoma nos últimos 12 meses · '+r.y7count+' nos últimos 7 dias · '+r.impedeCount+' com impacto funcional');
@@ -128,12 +137,17 @@ function buildReportText(p){
     lines.push(region+' — 12 meses: '+yn(a.y12)+' · Impediu atividade: '+yn(a.impede)+' · Últimos 7 dias: '+yn(a.y7));
    });
   } else if(k==='ict'){
-   lines.push('Resultado: '+r.n+' itens respondidos. ATENÇÃO: a classificação oficial do ICT/WAI depende de uma tabela de conversão específica não replicada automaticamente aqui — confira as respostas abaixo manualmente contra a versão oficial antes de citar uma categoria (baixa/moderada/boa/ótima) no laudo.');
+   if(r.incomplete || r.raw===null){
+    lines.push('Resultado: '+r.n+'/11 itens respondidos — incompleto. O cálculo do total oficial do WAI exige os 11 itens respondidos (nenhum como "não se aplica"). Complete todos os itens para obter a classificação.');
+   } else {
+    const band = ictBand(r.raw);
+    lines.push('Resultado: '+r.raw+'/49 pontos — '+band.label+' (referência oficial: 7-27 baixa, 28-36 moderada, 37-43 boa, 44-49 excelente).');
+   }
    lines.push('');
    qdef.data.forEach((sec,i)=>{
     const [domain, opts] = sec;
     const v = ans ? ans[i] : null;
-    lines.push(domain+': '+((v!==null&&v!==undefined)?opts[v]:'(não respondido)'));
+    lines.push(domain+': '+(v==='NA'?'(não se aplica / pulou)':(isAnswered(v)?opts[v]:'(não respondido)')));
    });
   } else if(k==='wpi'){
    lines.push('Resultado: WPI = '+r.raw+'/19 regiões com dor na última semana. Critério ACR de fibromialgia: WPI \u22657 (com SSS \u22655) OU WPI 4-6 (com SSS \u22659) — ver resultado do SSS.');
@@ -148,14 +162,14 @@ function buildReportText(p){
    qdef.data.forEach((sec,i)=>{
     const [domain, opts] = sec;
     const v = ans ? ans[i] : null;
-    lines.push(domain+': '+((v!==null&&v!==undefined)?opts[v]:'(não respondido)'));
+    lines.push(domain+': '+((isAnswered(v))?opts[v]:'(não respondido)'));
    });
   } else if(k==='hads'){
    lines.push('Resultado: Ansiedade = '+r.anxSum+'/21 pontos · Depressão = '+r.depSum+'/21 pontos. Referência usual por subescala: 0-7 normal, 8-10 leve/limítrofe, \u226511 clinicamente significativo.');
    lines.push('');
    qdef.items.forEach((item,i)=>{
     const v = ans ? ans[i] : null;
-    lines.push((i<7?'[Ansiedade] ':'[Depressão] ')+item+' '+((v!==null&&v!==undefined)?qdef.opts[v]:'(não respondido)'));
+    lines.push((i<7?'[Ansiedade] ':'[Depressão] ')+item+' '+((isAnswered(v))?qdef.opts[v]:'(não respondido)'));
    });
   } else if(k==='csi'){
    const band = csiBand(r.raw);
@@ -163,7 +177,7 @@ function buildReportText(p){
    lines.push('');
    qdef.items.forEach((item,i)=>{
     const v = ans ? ans[i] : null;
-    lines.push(item+' '+((v!==null&&v!==undefined)?qdef.opts[v]:'(não respondido)'));
+    lines.push(item+' '+((isAnswered(v))?qdef.opts[v]:'(não respondido)'));
    });
   } else if(k==='orebro'){
    const band = orebroBand(r.raw);
@@ -172,7 +186,7 @@ function buildReportText(p){
    qdef.data.forEach((sec,i)=>{
     const [domain, opts] = sec;
     const v = ans ? ans[i] : null;
-    lines.push(domain+': '+((v!==null&&v!==undefined)?opts[v]:'(não respondido)'));
+    lines.push(domain+': '+((isAnswered(v))?opts[v]:'(não respondido)'));
    });
   } else {
    const band = cifBand(r.pct);
@@ -189,18 +203,18 @@ function buildReportText(p){
     qdef.data.forEach((sec,i)=>{
      const [domain, opts] = sec;
      const v = ans ? ans[i] : null;
-     lines.push(domain+': '+((v!==null&&v!==undefined)?opts[v]:'(não respondido)'));
+     lines.push(domain+': '+(v==='NA'?'(não se aplica / pulou)':(isAnswered(v)?opts[v]:'(não respondido)')));
     });
    } else if(qdef.type==='likert'){
     qdef.items.forEach((item,i)=>{
      const opts = qdef.optsPerItem ? qdef.optsPerItem[i] : qdef.opts;
      const v = ans ? ans[i] : null;
-     lines.push(item+' '+((v!==null&&v!==undefined)?opts[v]:'(não respondido)'));
+     lines.push(item+' '+(v==='NA'?'(não se aplica / pulou)':(isAnswered(v)?opts[v]:'(não respondido)')));
     });
    } else if(qdef.type==='yesno'){
     qdef.items.forEach((item,i)=>{
      const v = ans ? ans[i] : null;
-     lines.push(item+' '+(v===1?'Sim':(v===0?'Não':'(não respondido)')));
+     lines.push(item+' '+(v==='NA'?'(não se aplica / pulou)':(v===1?'Sim':(v===0?'Não':'(não respondido)'))));
     });
    }
   }
@@ -825,41 +839,41 @@ const OREBRO_SECTIONS = [
 const QUESTIONNAIRES = {
  odi: { title:"Índice de Incapacidade de Oswestry (ODI)", short:"ODI · coluna lombar", type:"sections", data:ODI_SECTIONS,
   intro:"Estas perguntas são sobre a parte de baixo das suas costas (a coluna lombar) e como a dor atrapalha o seu dia a dia. Escolha a frase que mais parece com a sua situação hoje — não existe resposta certa ou errada.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*5))*100:0, raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*5))*100:0, raw:sum, n:a.length}; } },
  ndi: { title:"Índice de Incapacidade Cervical (NDI)", short:"NDI · coluna cervical", type:"sections", data:NDI_SECTIONS,
   intro:"Estas perguntas são sobre o seu pescoço e como a dor atrapalha o seu dia a dia. Escolha a frase que mais parece com a sua situação hoje.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*5))*100:0, raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*5))*100:0, raw:sum, n:a.length}; } },
  tsk13: { title:"Escala Tampa de Cinesiofobia (TSK-13)", short:"TSK-13 · medo do movimento", type:"likert", items:TSK13_ITEMS, opts:TSK13_OPTS,
   intro:"Estas perguntas não são sobre a dor em si — são sobre o que passa pela sua cabeça quando pensa em se movimentar ou fazer esforço. Responda com o que faz mais sentido pra você, sem pensar demais.",
-  score(answers){ let sum=0,n=0; answers.forEach((v,i)=>{ if(v!==null&&v!==undefined){ n++; const val=v+1; sum += TSK13_REVERSE.includes(i)?(5-val):val; }}); return {pct:n?((sum-n)/(n*3))*100:0, raw:sum, n}; } },
+  score(answers){ let sum=0,n=0; answers.forEach((v,i)=>{ if(isAnswered(v)){ n++; const val=v+1; sum += TSK13_REVERSE.includes(i)?(5-val):val; }}); return {pct:n?((sum-n)/(n*3))*100:0, raw:sum, n}; } },
  quickdash: { title:"QuickDASH (função do membro superior)", short:"QuickDASH · membro superior", type:"likert",
   items:QUICKDASH_ITEMS.map(i=>i[0]), optsPerItem:QUICKDASH_ITEMS.map(i=>i[1]),
   intro:"Estas perguntas são sobre dificuldades para usar o braço, o ombro ou a mão em tarefas simples do dia a dia.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); if(!a.length) return {pct:0,raw:0,n:0}; const sum=a.reduce((s,v)=>s+(v+1),0); const mean=sum/a.length; return {pct:((mean-1)/4)*100, raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); if(!a.length) return {pct:0,raw:0,n:0}; const sum=a.reduce((s,v)=>s+(v+1),0); const mean=sum/a.length; return {pct:((mean-1)/4)*100, raw:sum, n:a.length}; } },
  whodas: { title:"WHODAS 2.0 (12 itens) — funcionalidade geral", short:"WHODAS 2.0 · funcionalidade global", type:"likert", items:WHODAS_ITEMS, opts:WHODAS_OPTS,
   intro:"Estas perguntas são sobre o quanto seu problema de saúde dificulta atividades do seu dia a dia, de forma mais geral.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
  eva: { title:"Escala Visual Analógica de Dor (EVA)", short:"EVA · dor em 4 condições", type:"sliders",
   items:["Repouso (agora)","Pior momento do dia","Melhor momento do dia","Sob simulação de demanda laboral"],
   intro:"Agora vamos medir sua dor numa régua de 0 a 10, em momentos diferentes. 0 é sem dor nenhuma, 10 é a pior dor que você já sentiu na vida.",
   score(answers){ return {answers}; } },
  dn4: { title:"DN4 — versão entrevista (dor neuropática)", short:"DN4 · qualidade da dor", type:"yesno", items:DN4_ITEMS,
   intro:"Estas perguntas são sobre como é a sensação da sua dor (se ela parece queimação, choque, formigamento, e coisas do tipo). Responda Sim ou Não pro que você realmente sente.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:0, raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:0, raw:sum, n:a.length}; } },
  fabq: { title:"FABQ — subescala trabalho", short:"FABQ-trabalho · medo-evitação", type:"likert", items:FABQ_TRABALHO_ITEMS, opts:FABQ_OPTS,
   intro:"Estas perguntas são sobre a sua opinião a respeito do seu trabalho e da sua dor — não é sobre o que você sente no corpo, é sobre o que você pensa e acredita.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*6))*100:0, raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*6))*100:0, raw:sum, n:a.length}; } },
  pcs: { title:"PCS (Pain Catastrophizing Scale)", short:"PCS · catastrofização da dor", type:"likert", items:PCS_ITEMS, opts:PCS_OPTS,
   intro:"Estas perguntas são sobre os pensamentos que passam pela sua cabeça quando você sente dor. Não existe resposta certa ou errada, responda com o que é mais parecido com você.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
  rmdq: { title:"Roland-Morris (RMDQ)", short:"RMDQ · incapacidade lombar leve-moderada", type:"yesno", items:RMDQ_ITEMS,
   intro:"Estas são frases sobre o seu dia a dia por causa da dor na coluna. Marque Sim se a frase descreve como você está hoje, ou Não se ela não descreve.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/a.length)*100:0, raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/a.length)*100:0, raw:sum, n:a.length}; } },
  mjoa: { title:"mJOA (mielopatia cervical)", short:"mJOA · função motora, sensibilidade e esfíncter", type:"sections", data:MJOA_SECTIONS,
   intro:"Estas perguntas são sobre força, sensibilidade e controle da urina — coisas que podem ser afetadas quando há compressão na coluna do pescoço. Escolha a frase que mais parece com a sua situação hoje.",
   score(answers){
    let raw=0, maxPossible=0, n=0;
-   answers.forEach((v,i)=>{ if(v!==null && v!==undefined){ raw+=v; maxPossible+=MJOA_MAX[i]; n++; } });
+   answers.forEach((v,i)=>{ if(isAnswered(v)){ raw+=v; maxPossible+=MJOA_MAX[i]; n++; } });
    const pct = maxPossible ? 100-((raw/maxPossible)*100) : 0;
    return {pct, raw, n, maxPossible};
   } },
@@ -868,13 +882,13 @@ const QUESTIONNAIRES = {
   score(answers){ return {activities: answers}; } },
  wiq: { title:"WIQ (Walking Impairment Questionnaire)", short:"WIQ · caminhada e claudicação", type:"likert", items:WIQ_ITEMS, opts:WIQ_ABILITY_OPTS,
   intro:"Estas perguntas são sobre sua capacidade de caminhar e subir escadas — distâncias e velocidades diferentes. Escolha a opção que mais parece com o que você consegue fazer hoje.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); const pct=a.length?100-((sum/(a.length*4))*100):0; return {pct, raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); const pct=a.length?100-((sum/(a.length*4))*100):0; return {pct, raw:sum, n:a.length}; } },
  lefs: { title:"LEFS (Lower Extremity Functional Scale)", short:"LEFS · função de quadril, joelho e marcha", type:"likert", items:LEFS_ITEMS, opts:LEFS_OPTS,
   intro:"Estas perguntas são sobre atividades do dia a dia que dependem das suas pernas — agachar, subir escada, ficar em pé, andar, entre outras. Escolha a opção que mais parece com o que você consegue fazer hoje.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); const pct=a.length?100-((sum/(a.length*4))*100):0; return {pct, raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); const pct=a.length?100-((sum/(a.length*4))*100):0; return {pct, raw:sum, n:a.length}; } },
  sfi: { title:"SFI-10-Br (Spine Functional Index)", short:"SFI-10 · coluna como unidade única", type:"sections", data:SFI_SECTIONS,
   intro:"Estas perguntas são sobre a sua coluna como um todo — pescoço, meio das costas e parte de baixo das costas juntos, não separados. Escolha a frase que mais parece com a sua situação hoje.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
  nmq: { title:"Questionário Nórdico de Sintomas Osteomusculares (QNSO/NMQ)", short:"NMQ · mapa corporal de sintomas", type:"nmq", items:NMQ_REGIONS,
   intro:"Estas perguntas são sobre dor, desconforto ou dormência em diferentes partes do corpo — nos últimos 12 meses e nos últimos 7 dias.",
   score(answers){
@@ -891,7 +905,7 @@ const QUESTIONNAIRES = {
   intro:"Estas perguntas são sobre sua capacidade de trabalhar hoje, comparada a outros momentos da sua vida, e sobre doenças e afastamentos recentes.",
   score(answers){
    const v = answers;
-   const n = v.filter(x=>x!==null&&x!==undefined).length;
+   const n = v.filter(x=>x!==null&&x!==undefined&&x!=='NA').length;
    if(n < 11) return {raw:null, n, incomplete:true};
    const demandType = v[0];
    const item1 = v[1];
@@ -914,9 +928,9 @@ const QUESTIONNAIRES = {
  fiqr: { title:"FIQR (Fibromyalgia Impact Questionnaire — Revised)", short:"FIQR · impacto global da fibromialgia", type:"sections", data:FIQR_ITEMS,
   intro:"Estas perguntas são sobre como a fibromialgia afeta suas atividades, seu bem-estar geral e seus sintomas. Para cada uma, escolha o número de 0 a 10 que melhor descreve você nos últimos 7 dias.",
   score(answers){
-   const func = answers.slice(0,9).filter(v=>v!==null&&v!==undefined);
-   const imp = answers.slice(9,11).filter(v=>v!==null&&v!==undefined);
-   const sym = answers.slice(11,21).filter(v=>v!==null&&v!==undefined);
+   const func = answers.slice(0,9).filter(v=>isAnswered(v));
+   const imp = answers.slice(9,11).filter(v=>isAnswered(v));
+   const sym = answers.slice(11,21).filter(v=>isAnswered(v));
    const funcSum = func.reduce((s,v)=>s+v,0), impSum = imp.reduce((s,v)=>s+v,0), symSum = sym.reduce((s,v)=>s+v,0);
    const total = (funcSum/3) + impSum + (symSum/2);
    const n = func.length+imp.length+sym.length;
@@ -924,33 +938,33 @@ const QUESTIONNAIRES = {
   } },
  wpi: { title:"WPI (Widespread Pain Index — critério de fibromialgia)", short:"WPI · mapa corporal de dor (ACR)", type:"yesno", items:WPI_REGIONS,
   intro:"Nesta última semana, você teve dor em cada uma destas regiões do corpo? Responda Sim ou Não para cada uma. Esse instrumento, junto com o próximo (SSS), compõe o critério diagnóstico oficial de fibromialgia (ACR 2010/2016).",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {raw:sum, n:a.length}; } },
  sss: { title:"SSS (Symptom Severity Scale — companheira do WPI)", short:"SSS · gravidade dos sintomas (ACR)", type:"sections", data:SSS_SECTIONS,
   intro:"Estas perguntas são sobre a gravidade de alguns sintomas nos últimos dias/meses. Junto com o WPI (mapa de dor), formam o critério diagnóstico oficial de fibromialgia.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {raw:sum, n:a.length}; } },
  hoos: { title:"HOOS (Hip disability and Osteoarthritis Outcome Score)", short:"HOOS · quadril", type:"likert", items:HOOS_ITEMS, opts:JOINT_DIFF_OPTS,
   intro:"Estas perguntas são sobre dor, rigidez e dificuldade para usar o seu quadril em atividades do dia a dia.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
  koos: { title:"KOOS (Knee injury and Osteoarthritis Outcome Score)", short:"KOOS · joelho", type:"likert", items:KOOS_ITEMS, opts:JOINT_DIFF_OPTS,
   intro:"Estas perguntas são sobre dor, rigidez e dificuldade para usar o seu joelho em atividades do dia a dia.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
  fss: { title:"FSS (Fatigue Severity Scale)", short:"FSS · gravidade da fadiga", type:"likert", items:FSS_ITEMS, opts:FSS_OPTS,
   intro:"Estas perguntas são sobre o quanto a fadiga (cansaço) afeta sua vida. Escolha o quanto você concorda com cada frase.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+(v+1),0); const mean=a.length?sum/a.length:0; const pct=a.length?((mean-1)/6)*100:0; return {pct, raw:sum, n:a.length, mean}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+(v+1),0); const mean=a.length?sum/a.length:0; const pct=a.length?((mean-1)/6)*100:0; return {pct, raw:sum, n:a.length, mean}; } },
  psqi: { title:"PSQI (Índice de Qualidade do Sono de Pittsburgh)", short:"PSQI · qualidade do sono", type:"sections", data:PSQI_SECTIONS,
   intro:"Estas perguntas são sobre a qualidade do seu sono nas últimas semanas.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*3))*100:0, raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*3))*100:0, raw:sum, n:a.length}; } },
  hit6: { title:"HIT-6 (Headache Impact Test)", short:"HIT-6 · impacto da dor de cabeça/enxaqueca", type:"likert", items:HIT6_ITEMS, opts:HIT6_OPTS,
   intro:"Estas perguntas são sobre o quanto as dores de cabeça ou enxaquecas afetam seu dia a dia.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
  fabqpa: { title:"FABQ — subescala atividade física", short:"FABQ-AF · medo-evitação de atividade física", type:"likert", items:FABQ_PA_ITEMS, opts:FABQ_OPTS,
   intro:"Estas perguntas são sobre a sua opinião a respeito de atividade física e da sua dor — não é sobre o que você sente no corpo, é sobre o que você pensa e acredita. É a mesma lógica do questionário sobre trabalho que talvez você já tenha respondido, mas agora sobre atividade física em geral.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*6))*100:0, raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*6))*100:0, raw:sum, n:a.length}; } },
  comi: { title:"COMI-Back (Core Outcome Measures Index)", short:"COMI-Back · desfecho multidimensional de coluna", type:"sections", data:COMI_SECTIONS,
   intro:"Estas perguntas são sobre dor, bem-estar e o impacto do seu problema de coluna no trabalho e na vida, de forma resumida.",
   score(answers){
    let raw=0, maxPossible=0, n=0;
-   answers.forEach((v,i)=>{ if(v!==null && v!==undefined){ raw+=v; maxPossible+=COMI_MAX[i]; n++; } });
+   answers.forEach((v,i)=>{ if(isAnswered(v)){ raw+=v; maxPossible+=COMI_MAX[i]; n++; } });
    return {pct: maxPossible?(raw/maxPossible)*100:0, raw, n, maxPossible};
   } },
  hads: { title:"HADS (Hospital Anxiety and Depression Scale)", short:"HADS · ansiedade e depressão", type:"likert", items:HADS_ITEMS, opts:HADS_OPTS,
@@ -958,7 +972,7 @@ const QUESTIONNAIRES = {
   score(answers){
    let sum=0, n=0, anxSum=0, anxN=0, depSum=0, depN=0;
    answers.forEach((v,i)=>{
-    if(v!==null && v!==undefined){
+    if(isAnswered(v)){
      n++;
      const val = HADS_REVERSE.includes(i) ? (3-v) : v;
      sum += val;
@@ -969,13 +983,13 @@ const QUESTIONNAIRES = {
   } },
  csi: { title:"CSI (Central Sensitization Inventory)", short:"CSI · sensibilização central", type:"likert", items:CSI_ITEMS, opts:CSI_OPTS,
   intro:"Estas perguntas são sobre sintomas físicos e emocionais que você pode ter sentido recentemente. Algumas parecem não ter relação direta com o seu problema principal — responda igual assim, com sinceridade.",
-  score(answers){ const a=answers.filter(v=>v!==null&&v!==undefined); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
  orebro: { title:"Örebro (versão curta) — risco de cronificação", short:"Örebro-curto · prognóstico de retorno ao trabalho", type:"sections", data:OREBRO_SECTIONS,
   intro:"Estas perguntas são sobre a sua dor, seu humor e sua própria expectativa sobre o futuro. Elas ajudam a estimar o risco de a situação se prolongar, não descrevem só o que você sente hoje.",
   score(answers){
    const OREBRO_MAX = [7,10,10,4,10,10,10,10,10,10];
    let raw=0, maxPossible=0, n=0;
-   answers.forEach((v,i)=>{ if(v!==null && v!==undefined){ raw+=v; maxPossible+=OREBRO_MAX[i]; n++; } });
+   answers.forEach((v,i)=>{ if(isAnswered(v)){ raw+=v; maxPossible+=OREBRO_MAX[i]; n++; } });
    const scaled = maxPossible ? (raw/maxPossible)*100 : 0;
    return {pct:scaled, raw:Math.round(scaled), n, maxPossible};
   } }
@@ -1144,16 +1158,17 @@ wizard(){
  const pct = Math.round(((state.qIndex)/total)*100);
  const arc = arcSvg(pct);
  let body='';
+ const naBtnHtml = `<button class="btn btn-ghost" id="naBtn" style="width:100%;margin-top:14px;font-size:13.5px;">${state.qAnswers[state.qIndex]==='NA'?'✓ Marcado como \"não se aplica\" — toque numa opção acima para responder mesmo assim':'Não sei responder / não se aplica a mim'}</button>`;
  if(q.type==='sections'){
   const [domain, opts] = current;
-  body = `<div class="qtext">${domain}</div>` + opts.map((o,i)=>`<button class="opt ${state.qAnswers[state.qIndex]===i?'selected':''}" data-val="${i}">${o}</button>`).join('');
+  body = `<div class="qtext">${domain}</div>` + opts.map((o,i)=>`<button class="opt ${state.qAnswers[state.qIndex]===i?'selected':''}" data-val="${i}">${o}</button>`).join('') + naBtnHtml;
  } else if(q.type==='likert'){
   const opts = q.optsPerItem ? q.optsPerItem[state.qIndex] : q.opts;
-  body = `<div class="qtext">${current}</div>` + opts.map((o,i)=>`<button class="opt ${state.qAnswers[state.qIndex]===i?'selected':''}" data-val="${i}">${o}</button>`).join('');
+  body = `<div class="qtext">${current}</div>` + opts.map((o,i)=>`<button class="opt ${state.qAnswers[state.qIndex]===i?'selected':''}" data-val="${i}">${o}</button>`).join('') + naBtnHtml;
  } else if(q.type==='yesno'){
   body = `<div class="qtext">${current}</div>
    <button class="opt ${state.qAnswers[state.qIndex]===1?'selected':''}" data-val="1">Sim</button>
-   <button class="opt ${state.qAnswers[state.qIndex]===0?'selected':''}" data-val="0">Não</button>`;
+   <button class="opt ${state.qAnswers[state.qIndex]===0?'selected':''}" data-val="0">Não</button>` + naBtnHtml;
  } else if(q.type==='sliders'){
   const val = state.qAnswers[state.qIndex];
   body = `<div class="qtext">${current}</div>
@@ -1296,8 +1311,14 @@ dashboard(){
     pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">${r.y12count} regiões</span>`;
     detail = `${r.y12count} regiões com sintoma nos últimos 12 meses · ${r.y7count} nos últimos 7 dias · ${r.impedeCount} com impacto funcional${r.regions&&r.regions.length?(' — '+r.regions.join(', ')):''}`;
    } else if(k==='ict'){
-    pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">sem escore automático</span>`;
-    detail = `${r.n} itens respondidos — classificação oficial do ICT/WAI depende de tabela de conversão específica; confira as respostas manualmente antes de citar categoria no laudo`;
+    if(r.incomplete || r.raw===null){
+     pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">incompleto</span>`;
+     detail = `${r.n}/11 itens respondidos — o cálculo do total do WAI exige os 11 itens respondidos (sem "não se aplica"); complete todos para ver a classificação`;
+    } else {
+     const band = ictBand(r.raw);
+     pillsHtml = pillHtml(band);
+     detail = `${r.raw}/49 pontos — referência: 7-27 baixa, 28-36 moderada, 37-43 boa, 44-49 excelente`;
+    }
    } else if(k==='wpi'){
     const wpiHigh = r.raw>=7;
     pillsHtml = `<span class="pill" style="color:${wpiHigh?'var(--r3-txt)':'var(--r1-txt)'};background:${wpiHigh?'var(--r3-bg)':'var(--r1-bg)'}">WPI ${r.raw}/19</span>`;
@@ -1580,6 +1601,10 @@ function bind(){
    });
   } else {
    document.querySelectorAll('.opt').forEach(el=>{ el.onclick = ()=>{ state.qAnswers[state.qIndex] = parseInt(el.dataset.val); render(); }; });
+   $('naBtn') && ($('naBtn').onclick = ()=>{
+    state.qAnswers[state.qIndex] = (state.qAnswers[state.qIndex]==='NA') ? null : 'NA';
+    render();
+   });
   }
   $('backBtn').onclick = ()=>{ if(state.qIndex===0){ state.view='list'; render(); } else { state.qIndex--; render(); } };
   $('nextBtn').onclick = async ()=>{
