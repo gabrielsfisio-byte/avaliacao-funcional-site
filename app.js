@@ -836,6 +836,45 @@ const OREBRO_SECTIONS = [
  ["O quanto você acha que deveria evitar suas atividades normais (trabalho, esforço físico) por medo de piorar a dor ou se machucar?",OREBRO_SCALE_INTERFERE]
 ];
 
+// Explicações extras para perguntas mais técnicas/abstratas, mostradas em texto simples
+// embaixo da pergunta. Indexado por [chave do questionário][índice da pergunta, 0-based].
+const ITEM_HELP = {
+ eva: {
+  0: 'Pense em como está sua dor agora mesmo, neste momento, sem fazer nenhum esforço.',
+  1: 'Pense no momento em que a dor costuma ficar mais forte no seu dia (para muita gente, é de manhã ao levantar, ou à noite).',
+  2: 'Pense no momento em que a dor costuma ficar mais fraca, ou quase não aparece.',
+  3: 'Imagine fazendo a atividade mais pesada do seu trabalho (levantar peso, ficar em pé muito tempo, repetir o mesmo movimento) e dê a nota de dor que você sentiria nessa hora.'
+ },
+ ict: {
+  0: 'Pense no que você mais faz no seu trabalho no dia a dia.',
+  8: 'Isso é sobre se sentir bem ao fazer as coisas que você gosta — não é sobre o problema de saúde.',
+  9: 'Sentir-se "alerta" é estar atento, desperto, sem sonolência ou lentidão mental.',
+  10: 'Isso é sobre o seu sentimento em relação ao futuro em geral, não sobre o problema de saúde específico.'
+ },
+ mjoa: {
+  3: 'Essa pergunta é sobre o controle da urina (bexiga) — é uma pergunta padrão de avaliação neurológica, não precisa se sentir desconfortável em responder.'
+ },
+ tsk13: {
+  4: 'Esta frase está no sentido contrário das outras — leia com calma antes de responder.'
+ },
+ fabq: {
+  2: 'Isso pergunta sobre sua opinião/crença, não sobre o que você sente fisicamente.'
+ },
+ fabqpa: {
+  0: 'Isso pergunta sobre sua opinião/crença, não sobre o que você sente fisicamente.'
+ },
+ pcs: {
+  0: 'Isso é sobre os pensamentos que passam pela sua cabeça quando dói, não sobre a dor em si.'
+ },
+ csi: {
+  16: 'Uma lesão do tipo "chicote" é quando o pescoço é jogado bruscamente pra frente e pra trás, como costuma acontecer em batidas de carro por trás.'
+ },
+ orebro: {
+  0: 'Conte quantos dias, dos últimos 7, você conseguiu fazer suas atividades normais — mesmo sentindo dor.',
+  3: 'Pense em quantas vezes esse tipo de dor já apareceu antes, nos últimos 3 meses.'
+ }
+};
+
 const QUESTIONNAIRES = {
  odi: { title:"Índice de Incapacidade de Oswestry (ODI)", short:"ODI · coluna lombar", type:"sections", data:ODI_SECTIONS,
   intro:"Estas perguntas são sobre a parte de baixo das suas costas (a coluna lombar) e como a dor atrapalha o seu dia a dia. Escolha a frase que mais parece com a sua situação hoje — não existe resposta certa ou errada.",
@@ -854,7 +893,7 @@ const QUESTIONNAIRES = {
   intro:"Estas perguntas são sobre o quanto seu problema de saúde dificulta atividades do seu dia a dia, de forma mais geral.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
  eva: { title:"Escala Visual Analógica de Dor (EVA)", short:"EVA · dor em 4 condições", type:"sliders",
-  items:["Repouso (agora)","Pior momento do dia","Melhor momento do dia","Sob simulação de demanda laboral"],
+  items:["Agora, em repouso (sem fazer esforço)","No pior momento de dor do seu dia","No melhor momento de dor do seu dia","Fazendo um esforço parecido com o do seu trabalho (ex.: levantar peso, ficar em pé bastante tempo, movimentos repetidos)"],
   intro:"Agora vamos medir sua dor numa régua de 0 a 10, em momentos diferentes. 0 é sem dor nenhuma, 10 é a pior dor que você já sentiu na vida.",
   score(answers){ return {answers}; } },
  dn4: { title:"DN4 — versão entrevista (dor neuropática)", short:"DN4 · qualidade da dor", type:"yesno", items:DN4_ITEMS,
@@ -1158,20 +1197,22 @@ wizard(){
  const pct = Math.round(((state.qIndex)/total)*100);
  const arc = arcSvg(pct);
  let body='';
+ const itemHelp = (ITEM_HELP[state.qKey] && ITEM_HELP[state.qKey][state.qIndex]) || null;
+ const helpHtml = itemHelp ? `<p class="sub" style="margin-top:-6px;margin-bottom:16px;">💡 ${itemHelp}</p>` : '';
  const naBtnHtml = `<button class="btn btn-ghost" id="naBtn" style="width:100%;margin-top:14px;font-size:13.5px;">${state.qAnswers[state.qIndex]==='NA'?'✓ Marcado como \"não se aplica\" — toque numa opção acima para responder mesmo assim':'Não sei responder / não se aplica a mim'}</button>`;
  if(q.type==='sections'){
   const [domain, opts] = current;
-  body = `<div class="qtext">${domain}</div>` + opts.map((o,i)=>`<button class="opt ${state.qAnswers[state.qIndex]===i?'selected':''}" data-val="${i}">${o}</button>`).join('') + naBtnHtml;
+  body = `<div class="qtext">${domain}</div>` + helpHtml + opts.map((o,i)=>`<button class="opt ${state.qAnswers[state.qIndex]===i?'selected':''}" data-val="${i}">${o}</button>`).join('') + naBtnHtml;
  } else if(q.type==='likert'){
   const opts = q.optsPerItem ? q.optsPerItem[state.qIndex] : q.opts;
-  body = `<div class="qtext">${current}</div>` + opts.map((o,i)=>`<button class="opt ${state.qAnswers[state.qIndex]===i?'selected':''}" data-val="${i}">${o}</button>`).join('') + naBtnHtml;
+  body = `<div class="qtext">${current}</div>` + helpHtml + opts.map((o,i)=>`<button class="opt ${state.qAnswers[state.qIndex]===i?'selected':''}" data-val="${i}">${o}</button>`).join('') + naBtnHtml;
  } else if(q.type==='yesno'){
-  body = `<div class="qtext">${current}</div>
+  body = `<div class="qtext">${current}</div>` + helpHtml + `
    <button class="opt ${state.qAnswers[state.qIndex]===1?'selected':''}" data-val="1">Sim</button>
    <button class="opt ${state.qAnswers[state.qIndex]===0?'selected':''}" data-val="0">Não</button>` + naBtnHtml;
  } else if(q.type==='sliders'){
   const val = state.qAnswers[state.qIndex];
-  body = `<div class="qtext">${current}</div>
+  body = `<div class="qtext">${current}</div>` + helpHtml + `
    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px;">
     ${[0,1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="opt" data-val="${n}" style="text-align:center;padding:16px 0;margin-bottom:0;font-weight:700;font-size:18px;${val===n?'border-color:var(--navy);background:#EEF1F7;':''}">${n}</button>`).join('')}
    </div>
