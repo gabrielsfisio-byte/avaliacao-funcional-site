@@ -876,39 +876,39 @@ const ITEM_HELP = {
 };
 
 const QUESTIONNAIRES = {
- odi: { title:"Índice de Incapacidade de Oswestry (ODI)", short:"ODI · coluna lombar", type:"sections", data:ODI_SECTIONS,
+ odi: { title:"Índice de Incapacidade de Oswestry (ODI)", short:"ODI · coluna lombar", about:"Sobre a parte de baixo das suas costas (lombar).", type:"sections", data:ODI_SECTIONS,
   intro:"Estas perguntas são sobre a parte de baixo das suas costas (a coluna lombar) e como a dor atrapalha o seu dia a dia. Escolha a frase que mais parece com a sua situação hoje — não existe resposta certa ou errada.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*5))*100:0, raw:sum, n:a.length}; } },
- ndi: { title:"Índice de Incapacidade Cervical (NDI)", short:"NDI · coluna cervical", type:"sections", data:NDI_SECTIONS,
+ ndi: { title:"Índice de Incapacidade Cervical (NDI)", short:"NDI · coluna cervical", about:"Sobre o seu pescoço.", type:"sections", data:NDI_SECTIONS,
   intro:"Estas perguntas são sobre o seu pescoço e como a dor atrapalha o seu dia a dia. Escolha a frase que mais parece com a sua situação hoje.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*5))*100:0, raw:sum, n:a.length}; } },
- tsk13: { title:"Escala Tampa de Cinesiofobia (TSK-13)", short:"TSK-13 · medo do movimento", type:"likert", items:TSK13_ITEMS, opts:TSK13_OPTS,
+ tsk13: { title:"Escala Tampa de Cinesiofobia (TSK-13)", short:"TSK-13 · medo do movimento", about:"Sobre o medo de se movimentar.", type:"likert", items:TSK13_ITEMS, opts:TSK13_OPTS,
   intro:"Estas perguntas não são sobre a dor em si — são sobre o que passa pela sua cabeça quando pensa em se movimentar ou fazer esforço. Responda com o que faz mais sentido pra você, sem pensar demais.",
   score(answers){ let sum=0,n=0; answers.forEach((v,i)=>{ if(isAnswered(v)){ n++; const val=v+1; sum += TSK13_REVERSE.includes(i)?(5-val):val; }}); return {pct:n?((sum-n)/(n*3))*100:0, raw:sum, n}; } },
- quickdash: { title:"QuickDASH (função do membro superior)", short:"QuickDASH · membro superior", type:"likert",
+ quickdash: { title:"QuickDASH (função do membro superior)", short:"QuickDASH · membro superior", about:"Sobre o seu braço, ombro ou mão.", type:"likert",
   items:QUICKDASH_ITEMS.map(i=>i[0]), optsPerItem:QUICKDASH_ITEMS.map(i=>i[1]),
   intro:"Estas perguntas são sobre dificuldades para usar o braço, o ombro ou a mão em tarefas simples do dia a dia.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); if(!a.length) return {pct:0,raw:0,n:0}; const sum=a.reduce((s,v)=>s+(v+1),0); const mean=sum/a.length; return {pct:((mean-1)/4)*100, raw:sum, n:a.length}; } },
- whodas: { title:"WHODAS 2.0 (12 itens) — funcionalidade geral", short:"WHODAS 2.0 · funcionalidade global", type:"likert", items:WHODAS_ITEMS, opts:WHODAS_OPTS,
+ whodas: { title:"WHODAS 2.0 (12 itens) — funcionalidade geral", short:"WHODAS 2.0 · funcionalidade global", about:"Sobre suas atividades do dia a dia, de forma geral.", type:"likert", items:WHODAS_ITEMS, opts:WHODAS_OPTS,
   intro:"Estas perguntas são sobre o quanto seu problema de saúde dificulta atividades do seu dia a dia, de forma mais geral.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
- eva: { title:"Escala Visual Analógica de Dor (EVA)", short:"EVA · dor em 4 condições", type:"sliders",
+ eva: { title:"Escala Visual Analógica de Dor (EVA)", short:"EVA · dor em 4 condições", about:"Sobre a intensidade da sua dor.", type:"sliders",
   items:["Agora, em repouso (sem fazer esforço)","No pior momento de dor do seu dia","No melhor momento de dor do seu dia","Fazendo um esforço parecido com o do seu trabalho (ex.: levantar peso, ficar em pé bastante tempo, movimentos repetidos)"],
   intro:"Agora vamos medir sua dor numa régua de 0 a 10, em momentos diferentes. 0 é sem dor nenhuma, 10 é a pior dor que você já sentiu na vida.",
   score(answers){ return {answers}; } },
- dn4: { title:"DN4 — versão entrevista (dor neuropática)", short:"DN4 · qualidade da dor", type:"yesno", items:DN4_ITEMS,
+ dn4: { title:"DN4 — versão entrevista (dor neuropática)", short:"DN4 · qualidade da dor", about:"Sobre como é a sensação da sua dor.", type:"yesno", items:DN4_ITEMS,
   intro:"Estas perguntas são sobre como é a sensação da sua dor (se ela parece queimação, choque, formigamento, e coisas do tipo). Responda Sim ou Não pro que você realmente sente.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:0, raw:sum, n:a.length}; } },
- fabq: { title:"FABQ — subescala trabalho", short:"FABQ-trabalho · medo-evitação", type:"likert", items:FABQ_TRABALHO_ITEMS, opts:FABQ_OPTS,
+ fabq: { title:"FABQ — subescala trabalho", short:"FABQ-trabalho · medo-evitação", about:"Sobre sua opinião sobre trabalho e dor.", type:"likert", items:FABQ_TRABALHO_ITEMS, opts:FABQ_OPTS,
   intro:"Estas perguntas são sobre a sua opinião a respeito do seu trabalho e da sua dor — não é sobre o que você sente no corpo, é sobre o que você pensa e acredita.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*6))*100:0, raw:sum, n:a.length}; } },
- pcs: { title:"PCS (Pain Catastrophizing Scale)", short:"PCS · catastrofização da dor", type:"likert", items:PCS_ITEMS, opts:PCS_OPTS,
+ pcs: { title:"PCS (Pain Catastrophizing Scale)", short:"PCS · catastrofização da dor", about:"Sobre os pensamentos que você tem quando sente dor.", type:"likert", items:PCS_ITEMS, opts:PCS_OPTS,
   intro:"Estas perguntas são sobre os pensamentos que passam pela sua cabeça quando você sente dor. Não existe resposta certa ou errada, responda com o que é mais parecido com você.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
- rmdq: { title:"Roland-Morris (RMDQ)", short:"RMDQ · incapacidade lombar leve-moderada", type:"yesno", items:RMDQ_ITEMS,
+ rmdq: { title:"Roland-Morris (RMDQ)", short:"RMDQ · incapacidade lombar leve-moderada", about:"Sobre a parte de baixo das suas costas (lombar), em um jeito mais simples.", type:"yesno", items:RMDQ_ITEMS,
   intro:"Estas são frases sobre o seu dia a dia por causa da dor na coluna. Marque Sim se a frase descreve como você está hoje, ou Não se ela não descreve.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/a.length)*100:0, raw:sum, n:a.length}; } },
- mjoa: { title:"mJOA (mielopatia cervical)", short:"mJOA · função motora, sensibilidade e esfíncter", type:"sections", data:MJOA_SECTIONS,
+ mjoa: { title:"mJOA (mielopatia cervical)", short:"mJOA · função motora, sensibilidade e esfíncter", about:"Sobre força, sensibilidade e controle da urina, relacionados ao seu pescoço.", type:"sections", data:MJOA_SECTIONS,
   intro:"Estas perguntas são sobre força, sensibilidade e controle da urina — coisas que podem ser afetadas quando há compressão na coluna do pescoço. Escolha a frase que mais parece com a sua situação hoje.",
   score(answers){
    let raw=0, maxPossible=0, n=0;
@@ -916,19 +916,19 @@ const QUESTIONNAIRES = {
    const pct = maxPossible ? 100-((raw/maxPossible)*100) : 0;
    return {pct, raw, n, maxPossible};
   } },
- psfs: { title:"PSFS (Escala Funcional Específica do Paciente)", short:"PSFS · atividades escolhidas pelo próprio paciente", type:"psfs", items:PSFS_STEPS,
+ psfs: { title:"PSFS (Escala Funcional Específica do Paciente)", short:"PSFS · atividades escolhidas pelo próprio paciente", about:"Sobre atividades que você mesmo escolhe.", type:"psfs", items:PSFS_STEPS,
   intro:"Agora pense em até 3 atividades do seu dia a dia que ficaram difíceis por causa do problema. Para cada uma, dê uma nota de 0 a 10: 0 é 'não consigo fazer de jeito nenhum', 10 é 'consigo fazer como fazia antes'.",
   score(answers){ return {activities: answers}; } },
- wiq: { title:"WIQ (Walking Impairment Questionnaire)", short:"WIQ · caminhada e claudicação", type:"likert", items:WIQ_ITEMS, opts:WIQ_ABILITY_OPTS,
+ wiq: { title:"WIQ (Walking Impairment Questionnaire)", short:"WIQ · caminhada e claudicação", about:"Sobre sua capacidade de caminhar e subir escadas.", type:"likert", items:WIQ_ITEMS, opts:WIQ_ABILITY_OPTS,
   intro:"Estas perguntas são sobre sua capacidade de caminhar e subir escadas — distâncias e velocidades diferentes. Escolha a opção que mais parece com o que você consegue fazer hoje.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); const pct=a.length?100-((sum/(a.length*4))*100):0; return {pct, raw:sum, n:a.length}; } },
- lefs: { title:"LEFS (Lower Extremity Functional Scale)", short:"LEFS · função de quadril, joelho e marcha", type:"likert", items:LEFS_ITEMS, opts:LEFS_OPTS,
+ lefs: { title:"LEFS (Lower Extremity Functional Scale)", short:"LEFS · função de quadril, joelho e marcha", about:"Sobre suas pernas (quadril, joelho, marcha).", type:"likert", items:LEFS_ITEMS, opts:LEFS_OPTS,
   intro:"Estas perguntas são sobre atividades do dia a dia que dependem das suas pernas — agachar, subir escada, ficar em pé, andar, entre outras. Escolha a opção que mais parece com o que você consegue fazer hoje.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); const pct=a.length?100-((sum/(a.length*4))*100):0; return {pct, raw:sum, n:a.length}; } },
- sfi: { title:"SFI-10-Br (Spine Functional Index)", short:"SFI-10 · coluna como unidade única", type:"sections", data:SFI_SECTIONS,
+ sfi: { title:"SFI-10-Br (Spine Functional Index)", short:"SFI-10 · coluna como unidade única", about:"Sobre a sua coluna inteira (pescoço, meio e lombar juntos).", type:"sections", data:SFI_SECTIONS,
   intro:"Estas perguntas são sobre a sua coluna como um todo — pescoço, meio das costas e parte de baixo das costas juntos, não separados. Escolha a frase que mais parece com a sua situação hoje.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
- nmq: { title:"Questionário Nórdico de Sintomas Osteomusculares (QNSO/NMQ)", short:"NMQ · mapa corporal de sintomas", type:"nmq", items:NMQ_REGIONS,
+ nmq: { title:"Questionário Nórdico de Sintomas Osteomusculares (QNSO/NMQ)", short:"NMQ · mapa corporal de sintomas", about:"Sobre dor em diferentes partes do corpo.", type:"nmq", items:NMQ_REGIONS,
   intro:"Estas perguntas são sobre dor, desconforto ou dormência em diferentes partes do corpo — nos últimos 12 meses e nos últimos 7 dias.",
   score(answers){
    let y12count=0, y7count=0, impedeCount=0, n=0; const regions=[];
@@ -940,7 +940,7 @@ const QUESTIONNAIRES = {
    });
    return {y12count, y7count, impedeCount, n, regions};
   } },
- ict: { title:"ICT (Índice de Capacidade para o Trabalho / WAI)", short:"ICT-WAI · capacidade e prognóstico laboral", type:"sections", data:ICT_SECTIONS,
+ ict: { title:"ICT (Índice de Capacidade para o Trabalho / WAI)", short:"ICT-WAI · capacidade e prognóstico laboral", about:"Sobre sua capacidade de trabalhar.", type:"sections", data:ICT_SECTIONS,
   intro:"Estas perguntas são sobre sua capacidade de trabalhar hoje, comparada a outros momentos da sua vida, e sobre doenças e afastamentos recentes.",
   score(answers){
    const v = answers;
@@ -964,7 +964,7 @@ const QUESTIONNAIRES = {
    const total = Math.round(item1 + item2 + item3 + item4 + item5 + item6 + item7);
    return {raw:total, n, incomplete:false};
   } },
- fiqr: { title:"FIQR (Fibromyalgia Impact Questionnaire — Revised)", short:"FIQR · impacto global da fibromialgia", type:"sections", data:FIQR_ITEMS,
+ fiqr: { title:"FIQR (Fibromyalgia Impact Questionnaire — Revised)", short:"FIQR · impacto global da fibromialgia", about:"Sobre o impacto da fibromialgia na sua vida.", type:"sections", data:FIQR_ITEMS,
   intro:"Estas perguntas são sobre como a fibromialgia afeta suas atividades, seu bem-estar geral e seus sintomas. Para cada uma, escolha o número de 0 a 10 que melhor descreve você nos últimos 7 dias.",
   score(answers){
    const func = answers.slice(0,9).filter(v=>isAnswered(v));
@@ -975,38 +975,38 @@ const QUESTIONNAIRES = {
    const n = func.length+imp.length+sym.length;
    return {pct: total, raw: total, n};
   } },
- wpi: { title:"WPI (Widespread Pain Index — critério de fibromialgia)", short:"WPI · mapa corporal de dor (ACR)", type:"yesno", items:WPI_REGIONS,
+ wpi: { title:"WPI (Widespread Pain Index — critério de fibromialgia)", short:"WPI · mapa corporal de dor (ACR)", about:"Sobre em quais partes do corpo você sente dor.", type:"yesno", items:WPI_REGIONS,
   intro:"Nesta última semana, você teve dor em cada uma destas regiões do corpo? Responda Sim ou Não para cada uma. Esse instrumento, junto com o próximo (SSS), compõe o critério diagnóstico oficial de fibromialgia (ACR 2010/2016).",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {raw:sum, n:a.length}; } },
- sss: { title:"SSS (Symptom Severity Scale — companheira do WPI)", short:"SSS · gravidade dos sintomas (ACR)", type:"sections", data:SSS_SECTIONS,
+ sss: { title:"SSS (Symptom Severity Scale — companheira do WPI)", short:"SSS · gravidade dos sintomas (ACR)", about:"Sobre a gravidade de alguns sintomas (fadiga, sono, memória).", type:"sections", data:SSS_SECTIONS,
   intro:"Estas perguntas são sobre a gravidade de alguns sintomas nos últimos dias/meses. Junto com o WPI (mapa de dor), formam o critério diagnóstico oficial de fibromialgia.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {raw:sum, n:a.length}; } },
- hoos: { title:"HOOS (Hip disability and Osteoarthritis Outcome Score)", short:"HOOS · quadril", type:"likert", items:HOOS_ITEMS, opts:JOINT_DIFF_OPTS,
+ hoos: { title:"HOOS (Hip disability and Osteoarthritis Outcome Score)", short:"HOOS · quadril", about:"Sobre o seu quadril.", type:"likert", items:HOOS_ITEMS, opts:JOINT_DIFF_OPTS,
   intro:"Estas perguntas são sobre dor, rigidez e dificuldade para usar o seu quadril em atividades do dia a dia.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
- koos: { title:"KOOS (Knee injury and Osteoarthritis Outcome Score)", short:"KOOS · joelho", type:"likert", items:KOOS_ITEMS, opts:JOINT_DIFF_OPTS,
+ koos: { title:"KOOS (Knee injury and Osteoarthritis Outcome Score)", short:"KOOS · joelho", about:"Sobre o seu joelho.", type:"likert", items:KOOS_ITEMS, opts:JOINT_DIFF_OPTS,
   intro:"Estas perguntas são sobre dor, rigidez e dificuldade para usar o seu joelho em atividades do dia a dia.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
- fss: { title:"FSS (Fatigue Severity Scale)", short:"FSS · gravidade da fadiga", type:"likert", items:FSS_ITEMS, opts:FSS_OPTS,
+ fss: { title:"FSS (Fatigue Severity Scale)", short:"FSS · gravidade da fadiga", about:"Sobre o quanto o cansaço (fadiga) afeta você.", type:"likert", items:FSS_ITEMS, opts:FSS_OPTS,
   intro:"Estas perguntas são sobre o quanto a fadiga (cansaço) afeta sua vida. Escolha o quanto você concorda com cada frase.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+(v+1),0); const mean=a.length?sum/a.length:0; const pct=a.length?((mean-1)/6)*100:0; return {pct, raw:sum, n:a.length, mean}; } },
- psqi: { title:"PSQI (Índice de Qualidade do Sono de Pittsburgh)", short:"PSQI · qualidade do sono", type:"sections", data:PSQI_SECTIONS,
+ psqi: { title:"PSQI (Índice de Qualidade do Sono de Pittsburgh)", short:"PSQI · qualidade do sono", about:"Sobre a qualidade do seu sono.", type:"sections", data:PSQI_SECTIONS,
   intro:"Estas perguntas são sobre a qualidade do seu sono nas últimas semanas.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*3))*100:0, raw:sum, n:a.length}; } },
- hit6: { title:"HIT-6 (Headache Impact Test)", short:"HIT-6 · impacto da dor de cabeça/enxaqueca", type:"likert", items:HIT6_ITEMS, opts:HIT6_OPTS,
+ hit6: { title:"HIT-6 (Headache Impact Test)", short:"HIT-6 · impacto da dor de cabeça/enxaqueca", about:"Sobre o impacto das suas dores de cabeça.", type:"likert", items:HIT6_ITEMS, opts:HIT6_OPTS,
   intro:"Estas perguntas são sobre o quanto as dores de cabeça ou enxaquecas afetam seu dia a dia.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
- fabqpa: { title:"FABQ — subescala atividade física", short:"FABQ-AF · medo-evitação de atividade física", type:"likert", items:FABQ_PA_ITEMS, opts:FABQ_OPTS,
+ fabqpa: { title:"FABQ — subescala atividade física", short:"FABQ-AF · medo-evitação de atividade física", about:"Sobre sua opinião sobre atividade física e dor.", type:"likert", items:FABQ_PA_ITEMS, opts:FABQ_OPTS,
   intro:"Estas perguntas são sobre a sua opinião a respeito de atividade física e da sua dor — não é sobre o que você sente no corpo, é sobre o que você pensa e acredita. É a mesma lógica do questionário sobre trabalho que talvez você já tenha respondido, mas agora sobre atividade física em geral.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*6))*100:0, raw:sum, n:a.length}; } },
- comi: { title:"COMI-Back (Core Outcome Measures Index)", short:"COMI-Back · desfecho multidimensional de coluna", type:"sections", data:COMI_SECTIONS,
+ comi: { title:"COMI-Back (Core Outcome Measures Index)", short:"COMI-Back · desfecho multidimensional de coluna", about:"Sobre a sua coluna, de forma resumida.", type:"sections", data:COMI_SECTIONS,
   intro:"Estas perguntas são sobre dor, bem-estar e o impacto do seu problema de coluna no trabalho e na vida, de forma resumida.",
   score(answers){
    let raw=0, maxPossible=0, n=0;
    answers.forEach((v,i)=>{ if(isAnswered(v)){ raw+=v; maxPossible+=COMI_MAX[i]; n++; } });
    return {pct: maxPossible?(raw/maxPossible)*100:0, raw, n, maxPossible};
   } },
- hads: { title:"HADS (Hospital Anxiety and Depression Scale)", short:"HADS · ansiedade e depressão", type:"likert", items:HADS_ITEMS, opts:HADS_OPTS,
+ hads: { title:"HADS (Hospital Anxiety and Depression Scale)", short:"HADS · ansiedade e depressão", about:"Sobre como você tem se sentido emocionalmente.", type:"likert", items:HADS_ITEMS, opts:HADS_OPTS,
   intro:"Estas perguntas são sobre como você tem se sentido emocionalmente nos últimos dias. Não é sobre o problema físico, é sobre o seu estado de humor.",
   score(answers){
    let sum=0, n=0, anxSum=0, anxN=0, depSum=0, depN=0;
@@ -1020,10 +1020,10 @@ const QUESTIONNAIRES = {
    });
    return {pct: n?(sum/(n*3))*100:0, raw:sum, n, anxSum, anxN, depSum, depN};
   } },
- csi: { title:"CSI (Central Sensitization Inventory)", short:"CSI · sensibilização central", type:"likert", items:CSI_ITEMS, opts:CSI_OPTS,
+ csi: { title:"CSI (Central Sensitization Inventory)", short:"CSI · sensibilização central", about:"Sobre sintomas físicos e emocionais diversos.", type:"likert", items:CSI_ITEMS, opts:CSI_OPTS,
   intro:"Estas perguntas são sobre sintomas físicos e emocionais que você pode ter sentido recentemente. Algumas parecem não ter relação direta com o seu problema principal — responda igual assim, com sinceridade.",
   score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
- orebro: { title:"Örebro (versão curta) — risco de cronificação", short:"Örebro-curto · prognóstico de retorno ao trabalho", type:"sections", data:OREBRO_SECTIONS,
+ orebro: { title:"Örebro (versão curta) — risco de cronificação", short:"Örebro-curto · prognóstico de retorno ao trabalho", about:"Sobre sua dor e sua expectativa sobre o futuro.", type:"sections", data:OREBRO_SECTIONS,
   intro:"Estas perguntas são sobre a sua dor, seu humor e sua própria expectativa sobre o futuro. Elas ajudam a estimar o risco de a situação se prolongar, não descrevem só o que você sente hoje.",
   score(answers){
    const OREBRO_MAX = [7,10,10,4,10,10,10,10,10,10];
@@ -1161,8 +1161,12 @@ list(){
  const keys = state.assignedKeys || QORDER;
  const rows = keys.map(k=>{
    const done = !!state.responsesLocal[k];
+   const qd = QUESTIONNAIRES[k];
    return `<div class="qcard" data-q="${k}">
-     <div><div class="qcard-title">${QUESTIONNAIRES[k].title}</div><div class="qcard-sub">${QUESTIONNAIRES[k].short}</div></div>
+     <div>
+       <div class="qcard-title">${qd.about || qd.title}</div>
+       <div class="qcard-sub">${qd.title}</div>
+     </div>
      <span class="badge ${done?'badge-done':'badge-pending'}">${done?'concluído':'pendente'}</span>
    </div>`;
  }).join('');
@@ -1462,7 +1466,7 @@ dashboard(){
      <div style="margin-bottom:16px;">
        ${QORDER.map(k=>`<label style="display:flex;align-items:center;gap:10px;padding:9px 0;font-size:14.5px;border-bottom:1px dashed var(--line);">
          <input type="checkbox" class="qcheck" value="${k}" checked style="width:18px;height:18px;flex-shrink:0;">
-         <span>${QUESTIONNAIRES[k].title}</span>
+         <span><strong>${QUESTIONNAIRES[k].title}</strong><br><span style="color:var(--muted);font-size:12.5px;">${QUESTIONNAIRES[k].about||''}</span></span>
        </label>`).join('')}
      </div>
      <button class="btn btn-primary" id="genLinkBtn">Gerar link</button>
