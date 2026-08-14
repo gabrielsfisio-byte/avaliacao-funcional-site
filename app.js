@@ -32,6 +32,11 @@ function orebroBand(raw){
   if(raw>=40) return {label:'Risco moderado', txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
   return {label:'Baixo risco', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
 }
+function essBand(raw){
+  if(raw>=16) return {label:'Sonolência excessiva grave', txt:'var(--r4-txt)', bg:'var(--r4-bg)'};
+  if(raw>=10) return {label:'Sonolência diurna excessiva', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
+  return {label:'Dentro da faixa normal', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
+}
 function mjoaBand(raw, maxPossible){
   const scaled = maxPossible ? (raw/maxPossible)*18 : raw;
   if(scaled>=15) return {label:'Mielopatia leve', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
@@ -187,6 +192,21 @@ function buildReportText(p){
     const [domain, opts] = sec;
     const v = ans ? ans[i] : null;
     lines.push(domain+': '+((isAnswered(v))?opts[v]:'(não respondido)'));
+   });
+  } else if(k==='ess'){
+   const band = essBand(r.raw);
+   lines.push('Resultado: '+r.raw+'/24 pontos — '+band.label+' (referência: 0-9 normal, 10-15 sonolência excessiva, \u226516 grave).');
+   lines.push('');
+   qdef.items.forEach((item,i)=>{
+    const v = ans ? ans[i] : null;
+    lines.push(item+' '+((isAnswered(v))?qdef.opts[v]:'(não respondido)'));
+   });
+  } else if(k==='chalder'){
+   lines.push('Resultado: Fadiga física = '+r.physSum+'/21 pontos · Fadiga mental = '+r.mentSum+'/12 pontos (total '+r.raw+'/33).');
+   lines.push('');
+   qdef.items.forEach((item,i)=>{
+    const v = ans ? ans[i] : null;
+    lines.push((i<7?'[Física] ':'[Mental] ')+item+' '+((isAnswered(v))?qdef.opts[v]:'(não respondido)'));
    });
   } else {
    const band = cifBand(r.pct);
@@ -836,6 +856,35 @@ const OREBRO_SECTIONS = [
  ["O quanto você acha que deveria evitar suas atividades normais (trabalho, esforço físico) por medo de piorar a dor ou se machucar?",OREBRO_SCALE_INTERFERE]
 ];
 
+/* ---- ESS (Epworth Sleepiness Scale) ---- */
+const ESS_OPTS = ["0 — Nenhuma chance de cochilar","1 — Pequena chance de cochilar","2 — Chance moderada de cochilar","3 — Alta chance de cochilar"];
+const ESS_ITEMS = [
+ "Sentado(a) e lendo",
+ "Assistindo TV",
+ "Sentado(a), inativo(a), em um lugar público (ex.: teatro, reunião, palestra)",
+ "Como passageiro(a) de carro, andando por 1 hora sem parar",
+ "Deitado(a) para descansar à tarde, quando as circunstâncias permitem",
+ "Sentado(a) e conversando com alguém",
+ "Sentado(a) calmamente depois de um almoço sem álcool",
+ "No carro, parado(a) por alguns minutos no trânsito"
+];
+
+/* ---- Escala de Fadiga de Chalder (11 itens: 7 física + 4 mental) ---- */
+const CHALDER_OPTS = ["Menos que o normal","Igual ao normal","Mais que o normal","Muito mais que o normal"];
+const CHALDER_ITEMS = [
+ "Você tem tido problemas de cansaço?",
+ "Você precisa descansar mais?",
+ "Você se sente sonolento(a) ou com vontade de dormir?",
+ "Você tem dificuldade para começar as coisas?",
+ "Você está com pouca força ou energia?",
+ "Você se sente fraco(a)?",
+ "Você tem dificuldade para terminar coisas que começou, por falta de energia?",
+ "Você tem dificuldade de concentração?",
+ "Você tem dificuldade para encontrar a palavra certa ao falar?",
+ "Como está sua memória, no geral?",
+ "Você comete erros bobos com mais frequência que o normal?"
+];
+
 // Explicações extras para perguntas mais técnicas/abstratas, mostradas em texto simples
 // embaixo da pergunta. Indexado por [chave do questionário][índice da pergunta, 0-based].
 const ITEM_HELP = {
@@ -1031,9 +1080,22 @@ const QUESTIONNAIRES = {
    answers.forEach((v,i)=>{ if(isAnswered(v)){ raw+=v; maxPossible+=OREBRO_MAX[i]; n++; } });
    const scaled = maxPossible ? (raw/maxPossible)*100 : 0;
    return {pct:scaled, raw:Math.round(scaled), n, maxPossible};
+  } },
+ ess: { title:"ESS (Epworth Sleepiness Scale)", short:"ESS · sonolência diurna", about:"Sobre a chance de você cochilar em situações do dia a dia.", type:"likert", items:ESS_ITEMS, opts:ESS_OPTS,
+  intro:"Estas perguntas são sobre a chance de você cochilar ou pegar no sono em situações comuns do dia a dia — não é sobre estar cansado(a), é sobre realmente cochilar.",
+  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*3))*100:0, raw:sum, n:a.length}; } },
+ chalder: { title:"Escala de Fadiga de Chalder", short:"Chalder · fadiga física e mental", about:"Sobre o seu cansaço, separando o físico do mental.", type:"likert", items:CHALDER_ITEMS, opts:CHALDER_OPTS,
+  intro:"Estas perguntas são sobre cansaço (fadiga) — algumas sobre o corpo, outras sobre a cabeça (concentração, memória). Compare com o que era normal pra você antes do problema.",
+  score(answers){
+   const phys = answers.slice(0,7).filter(v=>isAnswered(v));
+   const ment = answers.slice(7,11).filter(v=>isAnswered(v));
+   const physSum = phys.reduce((s,v)=>s+v,0), mentSum = ment.reduce((s,v)=>s+v,0);
+   const n = phys.length+ment.length;
+   const sum = physSum+mentSum;
+   return {pct:n?(sum/(n*3))*100:0, raw:sum, n, physSum, physN:phys.length, mentSum, mentN:ment.length};
   } }
 };
-const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","sfi","nmq","ict","fiqr","wpi","sss","hoos","koos","fss","psqi","hit6","fabqpa","comi","hads","csi","orebro"];
+const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","sfi","nmq","ict","fiqr","wpi","sss","hoos","koos","fss","psqi","hit6","fabqpa","comi","hads","csi","orebro","ess","chalder"];
 
 /* ---------- Supabase data layer ---------- */
 function newUuid(){
@@ -1385,6 +1447,13 @@ dashboard(){
     const band = orebroBand(r.raw);
     pillsHtml = pillHtml(band);
     detail = `${r.raw}/100 normalizado (referência aproximada: ≥50 alto risco — escore oficial validado sobre soma bruta, aqui normalizado; trate como aproximação)`;
+   } else if(k==='ess'){
+    const band = essBand(r.raw);
+    pillsHtml = pillHtml(band);
+    detail = `${r.raw}/24 pontos (referência: 0-9 normal, 10-15 sonolência excessiva, ≥16 grave)`;
+   } else if(k==='chalder'){
+    pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">Física ${r.physSum}/21</span> <span class="pill" style="background:var(--gray-bg);color:var(--gray-txt);margin-left:4px;">Mental ${r.mentSum}/12</span>`;
+    detail = `Fadiga física: ${r.physSum}/21 · Fadiga mental: ${r.mentSum}/12 (total ${r.raw}/33)`;
    } else {
     const band = cifBand(r.pct);
     pillsHtml = pillHtml(band) + ` <span class="pill" style="background:var(--gray-bg);color:var(--gray-txt);margin-left:4px;">CIF ${band.q}</span>`;
@@ -1463,11 +1532,16 @@ dashboard(){
      <input type="text" id="newName" placeholder="Nome completo do paciente">
      <input type="tel" id="newPhone" placeholder="Telefone (opcional)">
      <label class="field" style="margin-top:4px;">Questionários deste caso</label>
-     <div style="margin-bottom:16px;">
-       ${QORDER.map(k=>`<label style="display:flex;align-items:center;gap:10px;padding:9px 0;font-size:14.5px;border-bottom:1px dashed var(--line);">
+     <div style="position:relative;margin-bottom:10px;">
+       <input type="text" id="qSearch" placeholder="Buscar questionário (ex.: joelho, sono, trabalho)..." style="width:100%;font-family:'Inter';font-size:14.5px;padding:12px 14px 12px 38px;border:1.5px solid var(--line);border-radius:10px;">
+       <span style="position:absolute;left:13px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--muted);pointer-events:none;">🔍</span>
+     </div>
+     <div style="margin-bottom:16px;max-height:360px;overflow-y:auto;">
+       ${QORDER.map(k=>`<label class="qcheck-row" data-search="${(QUESTIONNAIRES[k].title+' '+(QUESTIONNAIRES[k].about||'')).toLowerCase()}" style="display:flex;align-items:center;gap:10px;padding:9px 0;font-size:14.5px;border-bottom:1px dashed var(--line);">
          <input type="checkbox" class="qcheck" value="${k}" checked style="width:18px;height:18px;flex-shrink:0;">
          <span><strong>${QUESTIONNAIRES[k].title}</strong><br><span style="color:var(--muted);font-size:12.5px;">${QUESTIONNAIRES[k].about||''}</span></span>
        </label>`).join('')}
+       <p class="sub" id="qSearchEmpty" style="display:none;margin:10px 0 0;">Nenhum questionário encontrado com esse termo.</p>
      </div>
      <button class="btn btn-primary" id="genLinkBtn">Gerar link</button>
      <div id="linkResult" style="display:none;margin-top:14px;padding:14px;background:var(--bg);border-radius:10px;">
@@ -1748,6 +1822,16 @@ function bind(){
     render();
    };
   });
+  $('qSearch').oninput = ()=>{
+   const term = $('qSearch').value.trim().toLowerCase();
+   let anyVisible = false;
+   document.querySelectorAll('.qcheck-row').forEach(el=>{
+    const match = !term || el.dataset.search.includes(term);
+    el.style.display = match ? 'flex' : 'none';
+    if(match) anyVisible = true;
+   });
+   $('qSearchEmpty').style.display = anyVisible ? 'none' : 'block';
+  };
   $('genLinkBtn').onclick = async ()=>{
    const name = $('newName').value.trim();
    if(!name){ $('newName').style.borderColor='#C00000'; return; }
