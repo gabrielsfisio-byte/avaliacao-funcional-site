@@ -1536,6 +1536,10 @@ dashboard(){
        <input type="text" id="qSearch" placeholder="Buscar questionário (ex.: joelho, sono, trabalho)..." style="width:100%;font-family:'Inter';font-size:14.5px;padding:12px 14px 12px 38px;border:1.5px solid var(--line);border-radius:10px;">
        <span style="position:absolute;left:13px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--muted);pointer-events:none;">🔍</span>
      </div>
+     <div style="display:flex;gap:10px;margin-bottom:10px;">
+       <button class="btn btn-ghost" id="markAllBtn" style="flex:1;font-size:13px;padding:10px;">Marcar todos</button>
+       <button class="btn btn-ghost" id="unmarkAllBtn" style="flex:1;font-size:13px;padding:10px;">Desmarcar todos</button>
+     </div>
      <div style="margin-bottom:16px;max-height:360px;overflow-y:auto;">
        ${QORDER.map(k=>`<label class="qcheck-row" data-search="${(QUESTIONNAIRES[k].title+' '+(QUESTIONNAIRES[k].about||'')).toLowerCase()}" style="display:flex;align-items:center;gap:10px;padding:9px 0;font-size:14.5px;border-bottom:1px dashed var(--line);">
          <input type="checkbox" class="qcheck" value="${k}" checked style="width:18px;height:18px;flex-shrink:0;">
@@ -1822,6 +1826,16 @@ function bind(){
     render();
    };
   });
+  $('markAllBtn').onclick = ()=>{
+   document.querySelectorAll('.qcheck-row').forEach(el=>{
+    if(el.style.display !== 'none'){ el.querySelector('.qcheck').checked = true; }
+   });
+  };
+  $('unmarkAllBtn').onclick = ()=>{
+   document.querySelectorAll('.qcheck-row').forEach(el=>{
+    if(el.style.display !== 'none'){ el.querySelector('.qcheck').checked = false; }
+   });
+  };
   $('qSearch').oninput = ()=>{
    const term = $('qSearch').value.trim().toLowerCase();
    let anyVisible = false;
