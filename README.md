@@ -143,6 +143,13 @@ Como os domínios aqui têm amplitudes diferentes entre si, o resultado mostrado
 **normalizado** para uma escala de 0 a 100 — trate o número como uma aproximação da
 gravidade, não como o escore oficial exato validado na literatura.
 
+**SF-36:** os 35 itens foram agrupados por domínio (em vez de intercalados na ordem oficial
+original), para facilitar a construção — o conteúdo e a lógica de pontuação por domínio
+seguem o padrão oficial (0 = pior saúde possível, 100 = melhor saúde possível, ao
+contrário da maioria dos outros instrumentos deste sistema, onde número mais alto = pior).
+Diferente dos demais questionários, aqui o resultado não é uma nota única, e sim 8 notas
+separadas (uma por domínio).
+
 Antes de usar os resultados em um laudo que vá para o INSS ou para o Judiciário, vale
 comparar o texto das perguntas com as versões validadas publicadas — principalmente o
 item de pontuação invertida do TSK-13, que varia de numeração entre versões.

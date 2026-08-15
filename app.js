@@ -37,6 +37,13 @@ function essBand(raw){
   if(raw>=10) return {label:'Sonolência diurna excessiva', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
   return {label:'Dentro da faixa normal', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
 }
+// SF-36: ao contrário das outras bandas, aqui pontuação MAIOR = MELHOR saúde (convenção oficial do instrumento).
+function sf36Band(pct){
+  if(pct>=75) return {label:'Boa', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
+  if(pct>=50) return {label:'Moderada', txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
+  if(pct>=25) return {label:'Comprometida', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
+  return {label:'Muito comprometida', txt:'var(--r4-txt)', bg:'var(--r4-bg)'};
+}
 function mjoaBand(raw, maxPossible){
   const scaled = maxPossible ? (raw/maxPossible)*18 : raw;
   if(scaled>=15) return {label:'Mielopatia leve', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
@@ -207,6 +214,17 @@ function buildReportText(p){
    qdef.items.forEach((item,i)=>{
     const v = ans ? ans[i] : null;
     lines.push((i<7?'[Física] ':'[Mental] ')+item+' '+((isAnswered(v))?qdef.opts[v]:'(não respondido)'));
+   });
+  } else if(k==='sf36'){
+   lines.push('Resultado por domínio (escala oficial: 0 = pior saúde possível, 100 = melhor saúde possível):');
+   r.domains.forEach(d=>{
+    lines.push('- '+d.label+': '+(d.pct!==null?d.pct.toFixed(0)+'%':'não respondido')+' ('+d.n+'/'+d.total+' itens respondidos)');
+   });
+   lines.push('');
+   qdef.data.forEach((sec,i)=>{
+    const [domain, opts] = sec;
+    const v = ans ? ans[i] : null;
+    lines.push(domain+': '+((isAnswered(v))?opts[v]:'(não respondido)'));
    });
   } else {
    const band = cifBand(r.pct);
@@ -885,6 +903,68 @@ const CHALDER_ITEMS = [
  "Você comete erros bobos com mais frequência que o normal?"
 ];
 
+/* ---- SF-36 (Medical Outcomes Study 36-Item Short Form Health Survey) ---- */
+/* Estrutura em 8 domínios. Em cada item, as opções foram ordenadas de pior (índice 0)
+   para melhor (índice mais alto), para permitir normalização direta de 0 a 100. */
+const SF36_OPTS_3 = ["Sim, dificulta muito","Sim, dificulta um pouco","Não, não dificulta de modo algum"];
+const SF36_OPTS_SIMNAO = ["Sim","Não"];
+const SF36_OPTS_FREQ6 = ["Nunca","Uma pequena parte do tempo","Alguma parte do tempo","Uma boa parte do tempo","A maior parte do tempo","Todo o tempo"];
+const SF36_OPTS_FREQ6_INV = ["Todo o tempo","A maior parte do tempo","Uma boa parte do tempo","Alguma parte do tempo","Uma pequena parte do tempo","Nunca"];
+const SF36_OPTS_INTERF5 = ["De forma muito intensa","Bastante","Moderadamente","Ligeiramente","De forma nenhuma"];
+const SF36_OPTS_FREQ5_INV = ["Todo o tempo","A maior parte do tempo","Alguma parte do tempo","Uma pequena parte do tempo","Nenhuma parte do tempo"];
+const SF36_OPTS_DOR = ["Muito grave","Grave","Moderada","Leve","Muito leve","Nenhuma"];
+const SF36_OPTS_DOR_INTERF = ["Extremamente","Bastante","Moderadamente","Um pouco","De maneira alguma"];
+const SF36_OPTS_SAUDE5 = ["Muito ruim","Ruim","Boa","Muito boa","Excelente"];
+const SF36_OPTS_COMPARA = ["Muito pior agora do que há um ano","Um pouco pior agora do que há um ano","Quase a mesma de um ano atrás","Um pouco melhor agora do que há um ano","Muito melhor agora do que há um ano"];
+const SF36_OPTS_VERDFALSO_NEG = ["Definitivamente verdadeiro","A maioria das vezes verdadeiro","Não sei","A maioria das vezes falso","Definitivamente falso"];
+const SF36_OPTS_VERDFALSO_POS = ["Definitivamente falso","A maioria das vezes falso","Não sei","A maioria das vezes verdadeiro","Definitivamente verdadeiro"];
+
+const SF36_SECTIONS = [
+ // Domínio 1 — Capacidade Funcional (10 itens, índices 0-9)
+ ["Atividades rigorosas, que exigem muito esforço, como correr, levantar objetos pesados, praticar esportes árduos",SF36_OPTS_3],
+ ["Atividades moderadas, como mover uma mesa, passar aspirador de pó, jogar bola",SF36_OPTS_3],
+ ["Levantar ou carregar sacolas de compras",SF36_OPTS_3],
+ ["Subir vários lances de escada",SF36_OPTS_3],
+ ["Subir um lance de escada",SF36_OPTS_3],
+ ["Curvar-se, ajoelhar-se ou dobrar-se",SF36_OPTS_3],
+ ["Andar mais de 1 quilômetro",SF36_OPTS_3],
+ ["Andar vários quarteirões",SF36_OPTS_3],
+ ["Andar um quarteirão",SF36_OPTS_3],
+ ["Tomar banho ou vestir-se sozinho(a)",SF36_OPTS_3],
+ // Domínio 2 — Limitação por Aspectos Físicos (4 itens, índices 10-13)
+ ["Nas últimas 4 semanas, você diminuiu o tempo dedicado ao trabalho ou a outras atividades por causa da sua saúde física?",SF36_OPTS_SIMNAO],
+ ["Nas últimas 4 semanas, você realizou menos tarefas do que gostaria por causa da sua saúde física?",SF36_OPTS_SIMNAO],
+ ["Nas últimas 4 semanas, você esteve limitado(a) no tipo de trabalho ou outras atividades por causa da sua saúde física?",SF36_OPTS_SIMNAO],
+ ["Nas últimas 4 semanas, você teve dificuldade de realizar o trabalho ou outras atividades (precisou de um esforço extra) por causa da sua saúde física?",SF36_OPTS_SIMNAO],
+ // Domínio 3 — Limitação por Aspectos Emocionais (3 itens, índices 14-16)
+ ["Nas últimas 4 semanas, você diminuiu o tempo dedicado ao trabalho ou a outras atividades por algum problema emocional?",SF36_OPTS_SIMNAO],
+ ["Nas últimas 4 semanas, você realizou menos tarefas do que gostaria por algum problema emocional?",SF36_OPTS_SIMNAO],
+ ["Nas últimas 4 semanas, você fez o trabalho ou outras atividades com menos cuidado do que de costume, por algum problema emocional?",SF36_OPTS_SIMNAO],
+ // Domínio 4 — Vitalidade (4 itens, índices 17-20)
+ ["Nas últimas 4 semanas, quanto tempo você se sentiu cheio(a) de vigor, de vontade, de força?",SF36_OPTS_FREQ6],
+ ["Nas últimas 4 semanas, quanto tempo você teve muita energia?",SF36_OPTS_FREQ6],
+ ["Nas últimas 4 semanas, quanto tempo você se sentiu descansado(a) e disposto(a)?",SF36_OPTS_FREQ6],
+ ["Nas últimas 4 semanas, quanto tempo você se sentiu animado(a) e com disposição para as atividades do dia?",SF36_OPTS_FREQ6],
+ // Domínio 5 — Aspectos Sociais (2 itens, índices 21-22)
+ ["Durante as últimas 4 semanas, o quanto sua saúde física ou emocional interferiu nas suas atividades sociais (visitar amigos, parentes, etc.)?",SF36_OPTS_INTERF5],
+ ["Durante as últimas 4 semanas, quanto tempo sua saúde física ou emocional interferiu em suas atividades sociais?",SF36_OPTS_FREQ5_INV],
+ // Domínio 6 — Dor (2 itens, índices 23-24)
+ ["Quanta dor no corpo você sentiu nas últimas 4 semanas?",SF36_OPTS_DOR],
+ ["Nas últimas 4 semanas, quanto a dor interferiu no seu trabalho normal (dentro e fora de casa)?",SF36_OPTS_DOR_INTERF],
+ // Domínio 7 — Saúde Mental (5 itens, índices 25-29)
+ ["Quanto tempo, nas últimas 4 semanas, você se sentiu nervoso(a)?",SF36_OPTS_FREQ6_INV],
+ ["Quanto tempo, nas últimas 4 semanas, você se sentiu tão deprimido(a) que nada conseguia animá-lo(a)?",SF36_OPTS_FREQ6_INV],
+ ["Quanto tempo, nas últimas 4 semanas, você se sentiu calmo(a) ou tranquilo(a)?",SF36_OPTS_FREQ6],
+ ["Quanto tempo, nas últimas 4 semanas, você se sentiu deprimido(a)?",SF36_OPTS_FREQ6_INV],
+ ["Quanto tempo, nas últimas 4 semanas, você se sentiu feliz?",SF36_OPTS_FREQ6],
+ // Domínio 8 — Estado Geral de Saúde (5 itens, índices 30-34)
+ ["Em geral, você diria que sua saúde é:",SF36_OPTS_SAUDE5],
+ ["Comparado a um ano atrás, como você avalia sua saúde em geral, agora?",SF36_OPTS_COMPARA],
+ ["\"Eu costumo adoecer um pouco mais facilmente do que as outras pessoas\"",SF36_OPTS_VERDFALSO_NEG],
+ ["\"Eu sou tão saudável quanto qualquer pessoa que eu conheço\"",SF36_OPTS_VERDFALSO_POS],
+ ["\"Eu acho que a minha saúde vai piorar\"",SF36_OPTS_VERDFALSO_NEG]
+];
+
 // Explicações extras para perguntas mais técnicas/abstratas, mostradas em texto simples
 // embaixo da pergunta. Indexado por [chave do questionário][índice da pergunta, 0-based].
 const ITEM_HELP = {
@@ -1093,9 +1173,26 @@ const QUESTIONNAIRES = {
    const n = phys.length+ment.length;
    const sum = physSum+mentSum;
    return {pct:n?(sum/(n*3))*100:0, raw:sum, n, physSum, physN:phys.length, mentSum, mentN:ment.length};
+  } },
+ sf36: { title:"SF-36 (Medical Outcomes Study 36-Item Short Form)", short:"SF-36 · qualidade de vida em 8 domínios", about:"Sobre sua qualidade de vida em vários aspectos: corpo, emoções, dor, energia e saúde em geral.", type:"sections", data:SF36_SECTIONS,
+  intro:"Este questionário é mais longo e cobre vários aspectos diferentes da sua saúde — o corpo, as emoções, a dor, a energia e como você avalia sua saúde de um jeito geral. Vá com calma, uma pergunta de cada vez.",
+  score(answers){
+   const itemMax = [2,2,2,2,2,2,2,2,2,2, 1,1,1,1, 1,1,1, 5,5,5,5, 4,4, 5,4, 5,5,5,5,5, 4,4,4,4,4];
+   const ranges = [[0,10],[10,14],[14,17],[17,21],[21,23],[23,25],[25,30],[30,35]];
+   const labels = ["Capacidade Funcional","Aspectos Físicos","Aspectos Emocionais","Vitalidade","Aspectos Sociais","Dor","Saúde Mental","Estado Geral de Saúde"];
+   const domains = ranges.map(([start,end],di)=>{
+    let raw=0, max=0, n=0;
+    for(let i=start;i<end;i++){
+     const v = answers[i];
+     if(isAnswered(v)){ raw+=v; max+=itemMax[i]; n++; }
+    }
+    return {label:labels[di], pct: max?(raw/max)*100:null, n, total:end-start};
+   });
+   const answeredAll = answers.filter(v=>isAnswered(v)).length;
+   return {domains, n:answeredAll};
   } }
 };
-const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","sfi","nmq","ict","fiqr","wpi","sss","hoos","koos","fss","psqi","hit6","fabqpa","comi","hads","csi","orebro","ess","chalder"];
+const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","sfi","nmq","ict","fiqr","wpi","sss","hoos","koos","fss","psqi","hit6","fabqpa","comi","hads","csi","orebro","ess","chalder","sf36"];
 
 /* ---------- Supabase data layer ---------- */
 function newUuid(){
@@ -1454,6 +1551,13 @@ dashboard(){
    } else if(k==='chalder'){
     pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">Física ${r.physSum}/21</span> <span class="pill" style="background:var(--gray-bg);color:var(--gray-txt);margin-left:4px;">Mental ${r.mentSum}/12</span>`;
     detail = `Fadiga física: ${r.physSum}/21 · Fadiga mental: ${r.mentSum}/12 (total ${r.raw}/33)`;
+   } else if(k==='sf36'){
+    pillsHtml = r.domains.map(d=>{
+     if(d.pct===null) return '';
+     const b = sf36Band(d.pct);
+     return `<span class="pill" style="color:${b.txt};background:${b.bg};margin:2px 4px 2px 0;display:inline-block;">${d.label} ${d.pct.toFixed(0)}%</span>`;
+    }).join('');
+    detail = `Escala oficial: 0% = pior saúde possível, 100% = melhor saúde possível, por domínio`;
    } else {
     const band = cifBand(r.pct);
     pillsHtml = pillHtml(band) + ` <span class="pill" style="background:var(--gray-bg);color:var(--gray-txt);margin-left:4px;">CIF ${band.q}</span>`;
@@ -1467,7 +1571,14 @@ dashboard(){
    }
    const detailKey = p.id+'::'+k;
    const isOpen = !!state.openDetails[detailKey];
-   const canExpand = (k!=='eva' && k!=='psfs');
+   const canExpand = (k!=='eva' && k!=='psfs' && k!=='sf36');
+   if(k==='sf36'){
+    return `<div class="score-line" style="flex-direction:column;align-items:stretch;">
+      <div class="sname">${qdef.title}</div>
+      <div class="sdetail" style="margin-bottom:8px;">${detail}</div>
+      <div>${pillsHtml}</div>
+    </div>`;
+   }
    return `<div class="score-line" style="flex-direction:column;align-items:stretch;">
      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
        <div><div class="sname">${qdef.title}</div>${(k==='eva'||k==='psfs')?`<div style="margin-top:6px;">${detail}</div>`:`<div class="sdetail">${detail}</div>`}</div>
