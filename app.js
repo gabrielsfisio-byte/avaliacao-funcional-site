@@ -226,6 +226,16 @@ function buildReportText(p){
     const v = ans ? ans[i] : null;
     lines.push(domain+': '+((isAnswered(v))?opts[v]:'(não respondido)'));
    });
+  } else if(k==='masq'){
+   lines.push('Resultado por domínio (quanto maior o percentual, mais frequente a queixa cognitiva):');
+   r.domains.forEach(d=>{
+    lines.push('- '+d.label+': '+(d.pct!==null?d.pct.toFixed(0)+'%':'não respondido')+' ('+d.n+'/'+d.total+' itens respondidos)');
+   });
+   lines.push('');
+   qdef.items.forEach((item,i)=>{
+    const v = ans ? ans[i] : null;
+    lines.push(item+' '+((isAnswered(v))?qdef.opts[v]:'(não respondido)'));
+   });
   } else {
    const band = cifBand(r.pct);
    let summary = 'Resultado: '+r.pct.toFixed(0)+'% — '+band.label+' (qualificador CIF '+band.q+')';
@@ -965,6 +975,55 @@ const SF36_SECTIONS = [
  ["\"Eu acho que a minha saúde vai piorar\"",SF36_OPTS_VERDFALSO_NEG]
 ];
 
+/* ---- MASQ (Multiple Ability Self-Report Questionnaire) — queixas cognitivas em 6 domínios ---- */
+const MASQ_OPTS = ["Nunca","Raramente","Às vezes","Frequentemente","Muito frequentemente"];
+const MASQ_ITEMS = [
+ // Domínio 1 — Linguagem (índices 0-5)
+ "Tenho dificuldade para encontrar a palavra certa quando estou falando.",
+ "Tenho dificuldade para entender o que as pessoas estão dizendo.",
+ "Tenho dificuldade para acompanhar uma conversa quando várias pessoas falam ao mesmo tempo.",
+ "Tenho dificuldade para entender o que estou lendo.",
+ "Confundo palavras parecidas quando falo.",
+ "Tenho dificuldade para escrever o que estou pensando.",
+ // Domínio 2 — Visuoespacial (índices 6-11)
+ "Fico perdido(a) em lugares que já conheço.",
+ "Tenho dificuldade para julgar distâncias (ex.: ao estacionar o carro).",
+ "Tenho dificuldade para montar ou seguir um mapa.",
+ "Esbarro em objetos ou pessoas com mais frequência que o normal.",
+ "Tenho dificuldade para organizar objetos no espaço (ex.: arrumar uma mala, um armário).",
+ "Tenho dificuldade de orientação, mesmo em lugares familiares.",
+ // Domínio 3 — Memória Verbal (índices 12-17)
+ "Esqueço nomes de pessoas que acabei de conhecer.",
+ "Esqueço coisas que as pessoas me contaram recentemente.",
+ "Esqueço compromissos ou combinados.",
+ "Preciso perguntar a mesma coisa mais de uma vez porque esqueci a resposta.",
+ "Esqueço o que ia dizer no meio de uma frase.",
+ "Tenho dificuldade para lembrar de listas (ex.: lista de compras) sem anotar.",
+ // Domínio 4 — Memória Visual (índices 18-23)
+ "Esqueço onde deixei meus objetos pessoais (ex.: chaves, óculos, celular).",
+ "Esqueço o rosto de pessoas que já conheci.",
+ "Tenho dificuldade para lembrar onde estacionei o carro.",
+ "Esqueço onde guardei coisas em casa.",
+ "Tenho dificuldade para reconhecer lugares que já visitei antes.",
+ "Esqueço detalhes visuais de coisas que vi recentemente.",
+ // Domínio 5 — Atenção/Concentração (índices 24-30)
+ "Tenho dificuldade para me concentrar em uma tarefa por muito tempo.",
+ "Me distraio com facilidade.",
+ "Tenho dificuldade para fazer mais de uma coisa ao mesmo tempo.",
+ "Perco o fio da meada no meio de uma tarefa.",
+ "Cometo erros bobos por falta de atenção.",
+ "Tenho dificuldade para me concentrar quando há barulho ao redor.",
+ "Preciso reler a mesma coisa várias vezes para entender.",
+ // Domínio 6 — Motora/Práxis (índices 31-37)
+ "Deixo cair objetos com mais frequência que o normal.",
+ "Tenho dificuldade para fazer tarefas que exigem coordenação fina (ex.: abotoar roupa, costurar).",
+ "Fico mais desajeitado(a) do que era antes.",
+ "Tenho dificuldade para escrever à mão de forma legível.",
+ "Tenho dificuldade para realizar sequências de movimentos (ex.: dançar, seguir uma coreografia).",
+ "Derrubo ou esbarro em coisas sem querer.",
+ "Sinto que meus movimentos ficaram mais lentos ou menos precisos."
+];
+
 // Explicações extras para perguntas mais técnicas/abstratas, mostradas em texto simples
 // embaixo da pergunta. Indexado por [chave do questionário][índice da pergunta, 0-based].
 const ITEM_HELP = {
@@ -1190,9 +1249,25 @@ const QUESTIONNAIRES = {
    });
    const answeredAll = answers.filter(v=>isAnswered(v)).length;
    return {domains, n:answeredAll};
+  } },
+ masq: { title:"MASQ (Multiple Ability Self-Report Questionnaire)", short:"MASQ · queixas cognitivas em 6 domínios", about:"Sobre memória, atenção, linguagem e coordenação no seu dia a dia.", type:"likert", items:MASQ_ITEMS, opts:MASQ_OPTS,
+  intro:"Estas perguntas são sobre coisas do dia a dia relacionadas à memória, atenção, orientação e coordenação. Pense em como você tem estado recentemente, comparado a como era antes.",
+  score(answers){
+   const ranges = [[0,6],[6,12],[12,18],[18,24],[24,31],[31,38]];
+   const labels = ["Linguagem","Visuoespacial","Memória Verbal","Memória Visual","Atenção/Concentração","Motora/Práxis"];
+   const domains = ranges.map(([start,end],di)=>{
+    let raw=0, max=0, n=0;
+    for(let i=start;i<end;i++){
+     const v = answers[i];
+     if(isAnswered(v)){ raw+=v; max+=4; n++; }
+    }
+    return {label:labels[di], pct: max?(raw/max)*100:null, n, total:end-start};
+   });
+   const answeredAll = answers.filter(v=>isAnswered(v)).length;
+   return {domains, n:answeredAll};
   } }
 };
-const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","sfi","nmq","ict","fiqr","wpi","sss","hoos","koos","fss","psqi","hit6","fabqpa","comi","hads","csi","orebro","ess","chalder","sf36"];
+const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","sfi","nmq","ict","fiqr","wpi","sss","hoos","koos","fss","psqi","hit6","fabqpa","comi","hads","csi","orebro","ess","chalder","sf36","masq"];
 
 /* ---------- Supabase data layer ---------- */
 function newUuid(){
@@ -1558,6 +1633,13 @@ dashboard(){
      return `<span class="pill" style="color:${b.txt};background:${b.bg};margin:2px 4px 2px 0;display:inline-block;">${d.label} ${d.pct.toFixed(0)}%</span>`;
     }).join('');
     detail = `Escala oficial: 0% = pior saúde possível, 100% = melhor saúde possível, por domínio`;
+   } else if(k==='masq'){
+    pillsHtml = r.domains.map(d=>{
+     if(d.pct===null) return '';
+     const b = cifBand(d.pct);
+     return `<span class="pill" style="color:${b.txt};background:${b.bg};margin:2px 4px 2px 0;display:inline-block;">${d.label} ${d.pct.toFixed(0)}%</span>`;
+    }).join('');
+    detail = `Quanto maior o percentual, mais frequente a queixa cognitiva naquele domínio`;
    } else {
     const band = cifBand(r.pct);
     pillsHtml = pillHtml(band) + ` <span class="pill" style="background:var(--gray-bg);color:var(--gray-txt);margin-left:4px;">CIF ${band.q}</span>`;
@@ -1571,8 +1653,8 @@ dashboard(){
    }
    const detailKey = p.id+'::'+k;
    const isOpen = !!state.openDetails[detailKey];
-   const canExpand = (k!=='eva' && k!=='psfs' && k!=='sf36');
-   if(k==='sf36'){
+   const canExpand = (k!=='eva' && k!=='psfs' && k!=='sf36' && k!=='masq');
+   if(k==='sf36' || k==='masq'){
     return `<div class="score-line" style="flex-direction:column;align-items:stretch;">
       <div class="sname">${qdef.title}</div>
       <div class="sdetail" style="margin-bottom:8px;">${detail}</div>

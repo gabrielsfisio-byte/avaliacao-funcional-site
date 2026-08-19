@@ -150,6 +150,14 @@ contrário da maioria dos outros instrumentos deste sistema, onde número mais a
 Diferente dos demais questionários, aqui o resultado não é uma nota única, e sim 8 notas
 separadas (uma por domínio).
 
+**MASQ:** os 38 itens (6 domínios: Linguagem, Visuoespacial, Memória Verbal, Memória
+Visual, Atenção/Concentração e Motora/Práxis) foram escritos a partir do conteúdo geral
+conhecido do instrumento (Seidenberg et al.), com uma escala de frequência uniforme de 5
+pontos para todos os itens — não foi conferido item a item contra a versão original em
+inglês nem contra uma tradução/validação brasileira específica. Como os demais
+instrumentos deste sistema, o resultado é mostrado por domínio (não uma nota única),
+seguindo o mesmo formato usado no SF-36.
+
 Antes de usar os resultados em um laudo que vá para o INSS ou para o Judiciário, vale
 comparar o texto das perguntas com as versões validadas publicadas — principalmente o
 item de pontuação invertida do TSK-13, que varia de numeração entre versões.
