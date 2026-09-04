@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#14212C">
+<title>Assistência Técnica — Perícia</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+:root{
+  --papel:#F2F5F7; --branco:#fff; --tinta:#14212C; --media:#4A5964;
+  --fraca:#87939C; --azul:#1F5673; --azul2:#3D7A99;
+  --verm:#9C3325; --vermbg:#FAEDEA; --verde:#2A6049; --verdebg:#E4EFE9;
+  --linha:#D2DAE0;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{
+  background:var(--papel);color:var(--tinta);
+  font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  padding-bottom:96px;
+}
+.topo{
+  position:sticky;top:0;z-index:100;background:var(--tinta);color:#fff;
+  padding:12px 16px;display:flex;align-items:center;gap:12px;
+}
+.topo h1{font-size:15px;font-weight:600;flex:1;line-height:1.3}
+.topo .prog{font-size:12px;opacity:.65;font-variant-numeric:tabular-nums}
+
+.guia{
+  background:var(--vermbg);border-bottom:1px solid var(--verm);
+  padding:14px 16px;font-size:15px;font-weight:600;color:var(--verm);
+  line-height:1.4;
+}
+.guia span{display:block;font-weight:400;color:var(--media);font-size:13.5px;margin-top:6px}
+
+.sec{border-bottom:1px solid var(--linha);background:var(--branco)}
+.sec-cab{
+  width:100%;background:none;border:0;text-align:left;
+  padding:16px;display:flex;align-items:center;gap:12px;cursor:pointer;
+  font:inherit;color:var(--tinta);
+}
+.sec-cab:active{background:var(--papel)}
+.sec-n{
+  width:26px;height:26px;border-radius:50%;background:var(--azul);color:#fff;
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:700;flex-shrink:0;
+}
+.sec-t{flex:1;font-size:15.5px;font-weight:600}
+.sec-c{font-size:12px;color:var(--fraca);font-variant-numeric:tabular-nums}
+.seta{color:var(--fraca);font-size:13px;transition:transform .18s}
+.sec.on .seta{transform:rotate(90deg)}
+.sec-corpo{display:none;padding:0 16px 20px}
+.sec.on .sec-corpo{display:block}
+
+.dica{
+  font-size:13px;color:var(--media);font-style:italic;
+  background:var(--papel);padding:11px 13px;border-radius:6px;margin-bottom:16px;
+}
+
+.q{border-top:1px solid var(--linha);padding-top:16px;margin-top:16px}
+.q:first-of-type{border-top:0;margin-top:0;padding-top:0}
+.q-txt{font-size:16px;font-weight:600;line-height:1.4;margin-bottom:7px}
+.q-txt b{color:var(--azul)}
+.q-autos{
+  font-size:13px;color:var(--media);line-height:1.45;
+  border-left:3px solid var(--azul);padding-left:10px;margin-bottom:11px;
+}
+.q-autos i{color:var(--azul);font-style:normal;font-weight:600}
+textarea{
+  width:100%;border:1px solid var(--linha);border-radius:6px;
+  padding:10px 11px;font:15px/1.45 inherit;color:var(--tinta);
+  background:var(--branco);resize:vertical;min-height:62px;
+}
+textarea:focus{outline:2px solid var(--azul);outline-offset:-1px;border-color:var(--azul)}
+.pills{display:flex;gap:7px;margin-top:9px;flex-wrap:wrap}
+.pill{
+  border:1px solid var(--linha);background:var(--branco);color:var(--media);
+  border-radius:20px;padding:7px 14px;font:13.5px inherit;cursor:pointer;
+}
+.pill.on{background:var(--tinta);color:#fff;border-color:var(--tinta)}
+.pill.on[data-v="contradiz"]{background:var(--verm);border-color:var(--verm)}
+.pill.on[data-v="bate"]{background:var(--verde);border-color:var(--verde)}
+.pill.on[data-v="piorou"]{background:var(--verde);border-color:var(--verde)}
+
+.chk{
+  display:flex;gap:12px;align-items:flex-start;
+  padding:12px 0;border-top:1px solid var(--linha);cursor:pointer;
+}
+.chk:first-of-type{border-top:0}
+.chk input{width:22px;height:22px;margin-top:1px;accent-color:var(--verde);flex-shrink:0}
+.chk span{font-size:15px;line-height:1.4}
+.chk.forte span{font-weight:600}
+.chk input:checked + span{color:var(--fraca)}
+
+.gr{font-size:12.5px;font-weight:700;color:var(--azul);margin:22px 0 4px}
+.gr:first-child{margin-top:0}
+
+.alerta{
+  background:var(--vermbg);border-left:3px solid var(--verm);
+  border-radius:0 6px 6px 0;padding:13px;margin:16px 0;font-size:14px;line-height:1.45;
+}
+.alerta b{color:var(--verm)}
+
+.acao{
+  position:fixed;left:0;right:0;bottom:0;z-index:100;
+  background:var(--branco);border-top:1px solid var(--linha);
+  padding:12px 16px;display:flex;gap:10px;
+  padding-bottom:calc(12px + env(safe-area-inset-bottom));
+}
+.bt{
+  flex:1;border:0;border-radius:8px;padding:14px;
+  font:15px/1 inherit;font-weight:600;cursor:pointer;
+}
+.bt-p{background:var(--azul);color:#fff}
+.bt-s{background:var(--papel);color:var(--media);border:1px solid var(--linha);flex:0 0 auto;padding:14px 18px}
+.aviso{
+  position:fixed;left:16px;right:16px;bottom:88px;z-index:120;
+  background:var(--tinta);color:#fff;padding:13px 16px;border-radius:8px;
+  font-size:14px;text-align:center;opacity:0;transition:opacity .2s;pointer-events:none;
+}
+.aviso.on{opacity:1}
+@media(min-width:760px){
+  body{max-width:720px;margin:0 auto;background:var(--branco)}
+  .acao{max-width:720px;left:50%;transform:translateX(-50%)}
+}
+</style>
+</head>
+<body>
+
+<div class="topo">
+  <h1>Perícia — Vanessa C. Gouvêa</h1>
+  <div class="prog" id="sync" style="margin-right:8px;">•</div>
+  <div class="prog" id="prog">0%</div>
+</div>
+
+<div class="guia">
+  A dor existe. A origem no trabalho é que não está provada.
+  <span>Pergunto com curiosidade · anoto em silêncio · <b>não rebato na hora</b> · não nego que ela sente dor · não entro em psiquiatria.</span>
+</div>
+
+<!-- 1 -->
+<div class="sec" data-sec>
+  <button class="sec-cab" data-abre><span class="sec-n">1</span><span class="sec-t">Perguntas — a dor e o histórico</span><span class="sec-c" data-cont></span><span class="seta">›</span></button>
+  <div class="sec-corpo">
+    <div class="dica">Só com abertura do perito. Pergunta aberta, deixa ela falar. A linha azul é só para você conferir — nunca leia em voz alta.</div>
+
+    <div class="q">
+      <div class="q-txt"><b>1.</b> Me conta como começou essa dor.</div>
+      <div class="q-autos"><i>Nos autos:</i> a inicial diz outubro de 2025.</div>
+      <textarea data-r placeholder="Resposta"></textarea>
+      <div class="pills" data-p><button class="pill" data-v="bate">bate</button><button class="pill" data-v="contradiz">contradiz</button></div>
+    </div>
+
+    <div class="q">
+      <div class="q-txt"><b>2.</b> Antes de entrar no hotel, a senhora já sentia alguma coisa na coluna?</div>
+      <div class="q-autos"><i>Nos autos:</i> ela mesma disse ao médico em 27/04/2026 — "dorsalgia de longa data". E entrou apta, com raio-X de coluna.</div>
+      <textarea data-r placeholder="Resposta"></textarea>
+      <div class="pills" data-p><button class="pill" data-v="bate">bate</button><button class="pill" data-v="contradiz">contradiz</button></div>
+    </div>
+
+    <div class="q">
+      <div class="q-txt"><b>3.</b> A senhora já fazia acompanhamento com ortopedista? Desde quando?</div>
+      <div class="q-autos"><i>Nos autos:</i> fls. 20 registra "já em tratamento com ortopedista". Se confirmar, a pré-existência sai da boca dela.</div>
+      <textarea data-r placeholder="Resposta"></textarea>
+      <div class="pills" data-p><button class="pill" data-v="bate">bate</button><button class="pill" data-v="contradiz">contradiz</button></div>
+    </div>
+
+    <div class="q">
+      <div class="q-txt"><b>4.</b> Onde a senhora trabalhou antes? O que fazia lá?</div>
+      <div class="q-autos"><i>Nos autos:</i> nada. Ninguém investigou emprego anterior em 676 páginas.</div>
+      <textarea data-r placeholder="Resposta"></textarea>
+    </div>
+
+    <div class="q">
+      <div class="q-txt"><b>5.</b> Em casa, como é a rotina? Tem filho pequeno, carrega peso?</div>
+      <div class="q-autos"><i>Nos autos:</i> há menção a cuidar do filho, sem nenhuma investigação de carga fora do trabalho.</div>
+      <textarea data-r placeholder="Resposta"></textarea>
+    </div>
+  </div>
+</div>
+
+<!-- 2 -->
+<div class="sec" data-sec>
+  <button class="sec-cab" data-abre><span class="sec-n">2</span><span class="sec-t">Perguntas — trabalho e jornada</span><span class="sec-c" data-cont></span><span class="seta">›</span></button>
+  <div class="sec-corpo">
+    <div class="q">
+      <div class="q-txt"><b>6.</b> Me descreve um dia normal seu na cozinha.</div>
+      <div class="q-autos"><i>Nos autos:</i> ela alega caixas pesadas e câmara fria. O PGR descreve lavar louça, higienizar panelas e preparar salada.</div>
+      <textarea data-r placeholder="Resposta"></textarea>
+      <div class="pills" data-p><button class="pill" data-v="bate">bate PGR</button><button class="pill" data-v="contradiz">bate inicial</button></div>
+    </div>
+
+    <div class="q">
+      <div class="q-txt"><b>7.</b> Essas caixas — mais ou menos quanto pesavam?</div>
+      <div class="q-autos"><i>Nos autos:</i> nunca aferido. Não há um peso registrado em lugar nenhum.</div>
+      <textarea data-r placeholder="Resposta"></textarea>
+    </div>
+
+    <div class="q">
+      <div class="q-txt"><b>8.</b> Tinha carrinho, tinha alguém para ajudar?</div>
+      <div class="q-autos"><i>Nos autos:</i> há ficha de entrega de cinta ergonômica assinada por ela.</div>
+      <textarea data-r placeholder="Resposta"></textarea>
+    </div>
+
+    <div class="q">
+      <div class="q-txt"><b>9.</b> Que horas a senhora chegava e que horas saía?</div>
+      <div class="q-autos"><i>Nos autos:</i> a inicial alega 7h às 23h todo dia, 244h extras por mês. O cartão registra 07h00 às 15h20.</div>
+      <textarea data-r placeholder="Resposta"></textarea>
+      <div class="pills" data-p><button class="pill" data-v="bate">bate</button><button class="pill" data-v="contradiz">contradiz</button></div>
+    </div>
+
+    <div class="q">
+      <div class="q-txt"><b>10.</b> Tinha folga na semana?</div>
+      <div class="q-autos"><i>Nos autos:</i> a inicial diz que não havia descanso semanal. O cartão mostra folga fixa na quinta e domingos.</div>
+      <textarea data-r placeholder="Resposta"></textarea>
+      <div class="pills" data-p><button class="pill" data-v="bate">bate</button><button class="pill" data-v="contradiz">contradiz</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- 3 -->
+<div class="sec" data-sec>
+  <button class="sec-cab" data-abre><span class="sec-n">3</span><span class="sec-t">Perguntas — evolução e tratamento</span><span class="sec-c" data-cont></span><span class="seta">›</span></button>
+  <div class="sec-corpo">
+    <div class="alerta"><b>Cuidado na 11.</b> Ela nega a transferência e juntou vídeos. Pergunte, anote e siga — não discuta isso na sala.</div>
+
+    <div class="q">
+      <div class="q-txt"><b>11.</b> Em fevereiro mudaram a senhora de setor? Como foi?</div>
+      <div class="q-autos"><i>Nos autos:</i> a empresa afirma que em 09/02/2026 ela foi para a governança. Ela nega.</div>
+      <textarea data-r placeholder="Resposta"></textarea>
+      <div class="pills" data-p><button class="pill" data-v="bate">bate</button><button class="pill" data-v="contradiz">contradiz</button></div>
+    </div>
+
+    <div class="q">
+      <div class="q-txt"><b>12.</b> Depois que mudou de setor, a dor melhorou, piorou ou ficou igual?</div>
+      <div class="q-autos"><i>Nos autos:</i> se piorou depois de tirar a exposição, o nexo enfraquece.</div>
+      <div class="pills" data-p><button class="pill" data-v="melhorou">melhorou</button><button class="pill" data-v="igual">igual</button><button class="pill" data-v="piorou">piorou</button></div>
+      <textarea data-r placeholder="Palavras dela" style="margin-top:9px"></textarea>
+    </div>
+
+    <div class="q">
+      <div class="q-txt"><b>13.</b> A senhora tirou férias em março. Como ficou a dor naquele mês parada?</div>
+      <div class="q-autos"><i>Nos autos:</i> 09/03 a 08/04/2026 sem trabalhar. Voltou e afastou 3 semanas depois. Isso é incontroverso.</div>
+      <div class="pills" data-p><button class="pill" data-v="melhorou">melhorou</button><button class="pill" data-v="igual">igual</button><button class="pill" data-v="piorou">piorou</button></div>
+      <textarea data-r placeholder="Palavras dela" style="margin-top:9px"></textarea>
+    </div>
+
+    <div class="q">
+      <div class="q-txt"><b>14.</b> O médico passou fisioterapia em abril. A senhora chegou a fazer?</div>
+      <div class="q-autos"><i>Nos autos:</i> 20 sessões prescritas em 26/04/2026. Nenhuma comprovação nos autos.</div>
+      <div class="pills" data-p><button class="pill" data-v="fez">fez</button><button class="pill" data-v="contradiz">não fez</button><button class="pill" data-v="desconv">desconversou</button></div>
+      <textarea data-r placeholder="Quantas sessões, onde" style="margin-top:9px"></textarea>
+    </div>
+
+    <div class="q">
+      <div class="q-txt"><b>15.</b> Fez a ressonância? E o exame de nervo da mão?</div>
+      <div class="q-autos"><i>Nos autos:</i> sem eletroneuromiografia, o túnel do carpo é só hipótese.</div>
+      <div class="pills" data-p><button class="pill" data-v="rm">fez RM</button><button class="pill" data-v="enmg">fez nervo</button><button class="pill" data-v="contradiz">não fez nada</button></div>
+      <textarea data-r placeholder="Resposta" style="margin-top:9px"></textarea>
+    </div>
+
+    <div class="q">
+      <div class="q-txt"><b>16.</b> Que remédio a senhora toma hoje? Todo dia ou só quando dói?</div>
+      <div class="q-autos"><i>Nos autos:</i> só sintomático — cetoprofeno e dipirona, na crise.</div>
+      <textarea data-r placeholder="Resposta"></textarea>
+    </div>
+  </div>
+</div>
+
+<!-- 4 -->
+<div class="sec" data-sec>
+  <button class="sec-cab" data-abre><span class="sec-n">4</span><span class="sec-t">Perguntas — como ela está hoje</span><span class="sec-c" data-cont></span><span class="seta">›</span></button>
+  <div class="sec-corpo">
+    <div class="q">
+      <div class="q-txt"><b>17.</b> Hoje, o que a senhora não consegue mais fazer?</div>
+      <div class="q-autos"><i>Nos autos:</i> deixe ela delimitar sozinha. Costuma ser menor que a petição.</div>
+      <textarea data-r placeholder="Resposta" style="min-height:84px"></textarea>
+    </div>
+
+    <div class="q">
+      <div class="q-txt"><b>18.</b> Está trabalhando em alguma coisa? Faz algum bico?</div>
+      <div class="q-autos"><i>Nos autos:</i> faltas injustificadas desde 15/05/2026.</div>
+      <textarea data-r placeholder="Resposta"></textarea>
+    </div>
+
+    <div class="q">
+      <div class="q-txt"><b>19.</b> Chegou a dar entrada no INSS? Deu certo?</div>
+      <div class="q-autos"><i>Nos autos:</i> nenhum benefício concedido, nenhuma decisão, sem prorrogação do atestado de 15 dias.</div>
+      <textarea data-r placeholder="Resposta"></textarea>
+    </div>
+
+    <div class="q">
+      <div class="q-txt"><b>20.</b> A senhora toma algum remédio para ansiedade? Desde quando?</div>
+      <div class="q-autos"><i>Nos autos:</i> em 20/12/2025 chegou ao pronto-socorro já usando Diazepam. Anote e siga — não aprofunde, é da advogada.</div>
+      <textarea data-r placeholder="Resposta"></textarea>
+    </div>
+  </div>
+</div>
+
+<!-- 5 -->
+<div class="sec" data-sec>
+  <button class="sec-cab" data-abre><span class="sec-n">5</span><span class="sec-t">O que eu observei</span><span class="sec-c" data-cont></span><span class="seta">›</span></button>
+  <div class="sec-corpo">
+    <div class="dica">O corpo não mente no gesto automático. Observação discreta — se ela nota, se controla.</div>
+
+    <div class="gr">Situações que eu criei</div>
+    <label class="chk"><input type="checkbox" data-c><span>Estendi a mão para cumprimentar</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Entreguei a caneta para assinar</span></label>
+    <label class="chk forte"><input type="checkbox" data-c><span>Pedi que buscasse uma cadeira</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Ofereci água</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Deixei um papel cair perto</span></label>
+
+    <div class="gr">Coluna — sem perceber</div>
+    <label class="chk"><input type="checkbox" data-c><span>Sentou sem apoiar nos braços</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Levantou sem apoio</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Cruzou as pernas</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Abaixou para pegar algo do chão</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Tirou ou calçou o sapato</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Tirou ou vestiu casaco (elevou os braços)</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Ficou sentada muito tempo sem reclamar</span></label>
+
+    <div class="gr">Mãos e punhos</div>
+    <label class="chk"><input type="checkbox" data-c><span>Mexeu no celular normalmente</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Abriu a bolsa, pegou documento</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Assinou sem dificuldade</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Gesticulou bastante ao falar</span></label>
+
+    <div class="gr">O contraste — o achado mais valioso</div>
+    <label class="chk forte"><input type="checkbox" data-c><span>Movimento amplo na conversa e travado no teste</span></label>
+    <label class="chk forte"><input type="checkbox" data-c><span>Dor no teste, mas fez o mesmo gesto espontâneo sem reclamar</span></label>
+    <textarea data-r placeholder="Qual movimento exatamente" style="margin-top:10px"></textarea>
+
+    <div class="gr">Meu olho clínico</div>
+    <label class="chk"><input type="checkbox" data-c><span>Ombros ou escápulas assimétricos</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Cintura assimétrica</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Gibosidade visível</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Curva da coluna visível em pé</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Atrofia na base do polegar ou nas costas</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Usa cinta, tala ou órtese</span></label>
+    <textarea data-r placeholder="Descrever o que vi" style="margin-top:10px"></textarea>
+  </div>
+</div>
+
+<!-- 6 -->
+<div class="sec" data-sec>
+  <button class="sec-cab" data-abre><span class="sec-n">6</span><span class="sec-t">O que o perito fez</span><span class="sec-c" data-cont></span><span class="seta">›</span></button>
+  <div class="sec-corpo">
+    <div class="dica">O que ficar desmarcado é o que faltou — e o que faltou é a base da impugnação depois.</div>
+
+    <div class="gr">Coluna</div>
+    <label class="chk"><input type="checkbox" data-c><span>Teste de Adams (dobrar o tronco à frente)</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Escoliômetro</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Goniômetro</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Schober ou dedo-solo</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Lasègue</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Reflexos</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Sensibilidade das pernas</span></label>
+
+    <div class="gr">Mãos e punhos</div>
+    <label class="chk"><input type="checkbox" data-c><span>Phalen</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Tinel</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Força de preensão</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Examinou as duas mãos</span></label>
+
+    <div class="gr">Geral</div>
+    <label class="chk"><input type="checkbox" data-c><span>Pesou</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Mediu altura</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Só conversou, não examinou</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Avaliou só no olho, sem instrumento</span></label>
+    <textarea data-r placeholder="Duração do exame físico (só o exame)" style="margin-top:10px"></textarea>
+
+    <div class="gr" style="color:var(--verm)">O que faltou</div>
+    <textarea data-r placeholder="O que eu esperava que ele fizesse e ele não fez" style="min-height:84px"></textarea>
+
+    <div class="gr">Documentos</div>
+    <label class="chk"><input type="checkbox" data-c><span>Manuseou PGR, LTCAT, PCMSO ou ASOs</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Olhou os cartões de ponto</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Assistiu aos vídeos dela</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Comentou a ausência de exame de nervo ou imagem</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Pediu exame novo</span></label>
+    <label class="chk forte"><input type="checkbox" data-c><span>Trabalhou só com o relato dela</span></label>
+  </div>
+</div>
+
+<!-- 7 -->
+<div class="sec" data-sec>
+  <button class="sec-cab" data-abre><span class="sec-n">7</span><span class="sec-t">O que eu fiz</span><span class="sec-c" data-cont></span><span class="seta">›</span></button>
+  <div class="sec-corpo">
+    <div class="dica">Esta é a parte que mostra o valor do seu trabalho no relatório. Registre até as sugestões recusadas.</div>
+
+    <label class="chk"><input type="checkbox" data-c><span>Sugeri teste de Adams ou escoliômetro</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Sugeri goniometria</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Sugeri Phalen e Tinel</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Sugeri aferir peso e altura</span></label>
+    <label class="chk"><input type="checkbox" data-c><span>Pedi que constasse em ata</span></label>
+    <textarea data-r placeholder="O que ele aceitou, recusou ou ignorou" style="margin-top:12px;min-height:84px"></textarea>
+
+    <div class="gr">Frases prontas</div>
+    <div class="dica" style="font-style:normal">
+      "Dr., considera pertinente aplicar o teste de Adams para avaliar a gibosidade?"<br><br>
+      "Dr., a classificação de escoliose severa depende do ângulo de Cobb? Há esse dado nos autos?"<br><br>
+      "Dr., a amplitude foi avaliada clinicamente ou com goniômetro?"<br><br>
+      "Dr., há eletroneuromiografia nos autos? A confirmação é possível sem ela?"<br><br>
+      "Dr., o peso e a altura serão aferidos para compor a análise?"
+    </div>
+  </div>
+</div>
+
+<!-- 8 -->
+<div class="sec" data-sec>
+  <button class="sec-cab" data-abre><span class="sec-n">8</span><span class="sec-t">Anotações livres</span><span class="sec-c" data-cont></span><span class="seta">›</span></button>
+  <div class="sec-corpo">
+    <div class="gr" style="color:var(--verm)">Frases dela que não batem com o processo</div>
+    <textarea data-r placeholder="Anotar" style="min-height:100px"></textarea>
+
+    <div class="gr">O que me chamou atenção</div>
+    <textarea data-r placeholder="Anotar" style="min-height:100px"></textarea>
+
+    <div class="gr">Postura do perito</div>
+    <textarea data-r placeholder="Equilibrado, pendendo para algum lado, o que sinalizou"></textarea>
+
+    <div class="gr">Duração e prazo do laudo</div>
+    <textarea data-r placeholder="Duração total / prazo informado"></textarea>
+
+    <div class="gr">Qualquer outra coisa</div>
+    <textarea data-r placeholder="Anotar" style="min-height:100px"></textarea>
+  </div>
+</div>
+
+<div class="acao">
+  <button class="bt bt-p" id="copiar">Copiar tudo</button>
+  <button class="bt bt-s" id="limpar">Limpar</button>
+</div>
+<div class="aviso" id="aviso"></div>
+
+<script>
+(function(){
+  var K='at-pericia-vanessa';
+
+  // ---------- Sincronização em nuvem (backup automático, além do salvamento local) ----------
+  var CASE_KEY = 'vanessa-gouvea-0010675-802026-tk92mq'; // identificador único deste caso
+  var SB_URL = 'https://esnasqtghtvpamyzonlx.supabase.co';
+  var SB_KEY = 'sb_publishable_WJoUE5Mi1E_76dc3lRAWxw_QW8vy3kv';
+  var supa = null;
+  try{ supa = window.supabase.createClient(SB_URL, SB_KEY); }catch(e){}
+  var syncTimer = null;
+  var syncEl = null;
+
+  function setSync(state){
+    if(!syncEl) syncEl = document.getElementById('sync');
+    if(!syncEl) return;
+    if(state==='ok'){ syncEl.textContent='☁️'; syncEl.title='Salvo na nuvem'; }
+    else if(state==='saving'){ syncEl.textContent='⏳'; syncEl.title='Salvando na nuvem...'; }
+    else if(state==='err'){ syncEl.textContent='⚠️'; syncEl.title='Sem internet — salvo só neste aparelho por enquanto'; }
+    else { syncEl.textContent='•'; syncEl.title=''; }
+  }
+
+  async function cloudSave(dataStr){
+    if(!supa) return;
+    setSync('saving');
+    try{
+      const { error } = await supa.rpc('save_pericia_notes', { p_key: CASE_KEY, p_data: JSON.parse(dataStr) });
+      setSync(error ? 'err' : 'ok');
+    }catch(e){ setSync('err'); }
+  }
+
+  async function cloudLoad(){
+    if(!supa) return null;
+    try{
+      const { data, error } = await supa.rpc('get_pericia_notes', { p_key: CASE_KEY });
+      if(error || !data) return null;
+      return data;
+    }catch(e){ return null; }
+  }
+
+  function salvar(){
+    try{
+      var d={t:[],c:[],p:[]};
+      document.querySelectorAll('[data-r]').forEach(function(e){d.t.push(e.value)});
+      document.querySelectorAll('[data-c]').forEach(function(e){d.c.push(e.checked)});
+      document.querySelectorAll('[data-p]').forEach(function(g){
+        var on=g.querySelector('.pill.on'); d.p.push(on?on.dataset.v:'');
+      });
+      var str = JSON.stringify(d);
+      localStorage.setItem(K,str);
+      // Envia para a nuvem com um pequeno atraso (evita mandar uma requisição a cada letra digitada)
+      if(syncTimer) clearTimeout(syncTimer);
+      syncTimer = setTimeout(function(){ cloudSave(str); }, 1200);
+    }catch(e){}
+  }
+  async function carregar(){
+    var local = null;
+    try{ local = JSON.parse(localStorage.getItem(K)||'null'); }catch(e){}
+    var cloud = await cloudLoad();
+    // Prioridade: se este aparelho já tem dados salvos localmente, usa eles (é a sessão em andamento).
+    // Se este aparelho está "limpo" (ex.: trocou de celular), usa o que estiver salvo na nuvem.
+    var d = local || cloud;
+    if(cloud) setSync('ok');
+    if(!d) return;
+    try{
+      document.querySelectorAll('[data-r]').forEach(function(e,i){if(d.t&&d.t[i])e.value=d.t[i]});
+      document.querySelectorAll('[data-c]').forEach(function(e,i){e.checked=!!(d.c&&d.c[i])});
+      document.querySelectorAll('[data-p]').forEach(function(g,i){
+        if(!d.p||!d.p[i])return;
+        var b=g.querySelector('[data-v="'+d.p[i]+'"]'); if(b)b.classList.add('on');
+      });
+    }catch(e){}
+  }
+
+  document.querySelectorAll('[data-abre]').forEach(function(b){
+    b.addEventListener('click',function(){b.parentElement.classList.toggle('on')});
+  });
+
+  document.querySelectorAll('[data-p]').forEach(function(g){
+    g.addEventListener('click',function(ev){
+      var b=ev.target.closest('.pill'); if(!b)return;
+      var j=b.classList.contains('on');
+      g.querySelectorAll('.pill').forEach(function(x){x.classList.remove('on')});
+      if(!j)b.classList.add('on');
+      salvar(); prog();
+    });
+  });
+
+  document.addEventListener('input',function(e){
+    if(e.target.matches('[data-r]')){salvar();prog()}
+  });
+  document.addEventListener('change',function(e){
+    if(e.target.matches('[data-c]')){salvar();prog()}
+  });
+
+  function prog(){
+    var tot=0,fei=0;
+    document.querySelectorAll('[data-sec]').forEach(function(s){
+      var t=0,f=0;
+      s.querySelectorAll('[data-r]').forEach(function(e){t++;if(e.value.trim())f++});
+      s.querySelectorAll('[data-c]').forEach(function(e){t++;if(e.checked)f++});
+      s.querySelectorAll('[data-p]').forEach(function(g){t++;if(g.querySelector('.pill.on'))f++});
+      var c=s.querySelector('[data-cont]'); if(c)c.textContent=f+'/'+t;
+      tot+=t;fei+=f;
+    });
+    document.getElementById('prog').textContent=tot?Math.round(fei/tot*100)+'%':'0%';
+  }
+
+  function msg(t){
+    var a=document.getElementById('aviso');
+    a.textContent=t;a.classList.add('on');
+    setTimeout(function(){a.classList.remove('on')},2200);
+  }
+
+  document.getElementById('copiar').addEventListener('click',function(){
+    var out=['PERÍCIA — VANESSA CRISTINA GOUVÊA','Processo 0010675-80.2026.5.03.0073',''];
+    document.querySelectorAll('[data-sec]').forEach(function(s){
+      var linhas=[];
+      s.querySelectorAll('.q').forEach(function(q){
+        var p=q.querySelector('.q-txt').textContent.trim();
+        var r=q.querySelector('[data-r]'), pl=q.querySelector('.pill.on');
+        var v=(r&&r.value.trim())||'', m=pl?' ['+pl.dataset.v+']':'';
+        if(v||m)linhas.push(p+m+'\nR: '+(v||'—'));
+      });
+      s.querySelectorAll('.chk input:checked').forEach(function(c){
+        linhas.push('[x] '+c.nextElementSibling.textContent.trim());
+      });
+      s.querySelectorAll('.sec-corpo > [data-r]').forEach(function(t){
+        if(t.value.trim())linhas.push((t.placeholder||'Nota')+': '+t.value.trim());
+      });
+      if(linhas.length){
+        out.push('--- '+s.querySelector('.sec-t').textContent.toUpperCase()+' ---');
+        out.push(linhas.join('\n\n'),'');
+      }
+    });
+    var txt=out.join('\n');
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(function(){msg('Copiado — cole no WhatsApp')},function(){fall(txt)});
+    }else fall(txt);
+  });
+  function fall(t){
+    var a=document.createElement('textarea');a.value=t;document.body.appendChild(a);
+    a.select();try{document.execCommand('copy');msg('Copiado')}catch(e){msg('Selecione e copie manualmente')}
+    document.body.removeChild(a);
+  }
+
+  document.getElementById('limpar').addEventListener('click',function(){
+    if(!confirm('Apagar todas as anotações desta perícia?'))return;
+    document.querySelectorAll('[data-r]').forEach(function(e){e.value=''});
+    document.querySelectorAll('[data-c]').forEach(function(e){e.checked=false});
+    document.querySelectorAll('.pill.on').forEach(function(e){e.classList.remove('on')});
+    try{localStorage.removeItem(K)}catch(e){}
+    prog();msg('Limpo');
+  });
+
+  carregar().then(prog);
+  document.querySelector('[data-sec]').classList.add('on');
+})();
+</script>
+</body>
+</html>
