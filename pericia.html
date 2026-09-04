@@ -429,6 +429,7 @@ textarea:focus{outline:2px solid var(--azul);outline-offset:-1px;border-color:va
 
 <div class="acao">
   <button class="bt bt-p" id="copiar">Copiar tudo</button>
+  <button class="bt bt-s" id="baixar" style="flex:0 0 auto;">⬇</button>
   <button class="bt bt-s" id="limpar">Limpar</button>
 </div>
 <div class="aviso" id="aviso"></div>
@@ -547,7 +548,7 @@ textarea:focus{outline:2px solid var(--azul);outline-offset:-1px;border-color:va
     setTimeout(function(){a.classList.remove('on')},2200);
   }
 
-  document.getElementById('copiar').addEventListener('click',function(){
+  function montarTexto(){
     var out=['PERÍCIA — VANESSA CRISTINA GOUVÊA','Processo 0010675-80.2026.5.03.0073',''];
     document.querySelectorAll('[data-sec]').forEach(function(s){
       var linhas=[];
@@ -568,10 +569,24 @@ textarea:focus{outline:2px solid var(--azul);outline-offset:-1px;border-color:va
         out.push(linhas.join('\n\n'),'');
       }
     });
-    var txt=out.join('\n');
+    return out.join('\n');
+  }
+
+  document.getElementById('copiar').addEventListener('click',function(){
+    var txt=montarTexto();
     if(navigator.clipboard&&navigator.clipboard.writeText){
       navigator.clipboard.writeText(txt).then(function(){msg('Copiado — cole no WhatsApp')},function(){fall(txt)});
     }else fall(txt);
+  });
+  document.getElementById('baixar').addEventListener('click',function(){
+    var txt=montarTexto();
+    var blob=new Blob([txt],{type:'text/plain;charset=utf-8'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url; a.download='pericia-vanessa-gouvea.txt';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    msg('Arquivo baixado');
   });
   function fall(t){
     var a=document.createElement('textarea');a.value=t;document.body.appendChild(a);
