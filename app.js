@@ -2,1272 +2,1389 @@
 
 const supabase = window.supabase.createClient(window.APP_CONFIG.SUPABASE_URL, window.APP_CONFIG.SUPABASE_ANON_KEY);
 
-/* ---------- CIF band helper (mesma escala usada nos laudos: 0-4/5-24/25-49/50-95/96-100) ---------- */
-function cifBand(pct){
-  pct = Math.max(0, Math.min(100, pct));
-  if(pct<=4)   return {q:0,label:'Sem deficiência', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
-  if(pct<=24)  return {q:1,label:'Leve',             txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
-  if(pct<=49)  return {q:2,label:'Moderada',         txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
-  if(pct<=95)  return {q:3,label:'Grave',            txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
-  return         {q:4,label:'Completa',        txt:'var(--r4-txt)', bg:'var(--r4-bg)'};
-}
-function evaBand(v){
-  if(v<=3) return {label:'Leve', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
-  if(v<=6) return {label:'Moderada', txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
-  return {label:'Grave', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
-}
-function dn4Band(raw){
-  if(raw>=3) return {label:'Sugestivo de dor neuropática', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
-  return {label:'Não sugestivo', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
-}
-function csiBand(raw){
-  if(raw>=60) return {label:'Extrema', txt:'var(--r4-txt)', bg:'var(--r4-bg)'};
-  if(raw>=50) return {label:'Grave', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
-  if(raw>=40) return {label:'Moderada', txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
-  if(raw>=30) return {label:'Leve', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
-  return {label:'Subclínica', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
-}
-function orebroBand(raw){
-  if(raw>=50) return {label:'Alto risco de cronificação', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
-  if(raw>=40) return {label:'Risco moderado', txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
-  return {label:'Baixo risco', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
-}
-function essBand(raw){
-  if(raw>=16) return {label:'Sonolência excessiva grave', txt:'var(--r4-txt)', bg:'var(--r4-bg)'};
-  if(raw>=10) return {label:'Sonolência diurna excessiva', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
-  return {label:'Dentro da faixa normal', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
-}
-// SF-36: ao contrário das outras bandas, aqui pontuação MAIOR = MELHOR saúde (convenção oficial do instrumento).
-function sf36Band(pct){
-  if(pct>=75) return {label:'Boa', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
-  if(pct>=50) return {label:'Moderada', txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
-  if(pct>=25) return {label:'Comprometida', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
-  return {label:'Muito comprometida', txt:'var(--r4-txt)', bg:'var(--r4-bg)'};
-}
-function mjoaBand(raw, maxPossible){
-  const scaled = maxPossible ? (raw/maxPossible)*18 : raw;
-  if(scaled>=15) return {label:'Mielopatia leve', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
-  if(scaled>=12) return {label:'Mielopatia moderada', txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
-  return {label:'Mielopatia grave', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
-}
-function ictBand(total){
-  if(total>=44) return {label:'Excelente', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
-  if(total>=37) return {label:'Boa', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
-  if(total>=28) return {label:'Moderada', txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
-  return {label:'Baixa (recomenda-se restaurar a capacidade)', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
-}
-function psfsItemBand(v){
-  if(v>=7) return {label:'Preservada', txt:'var(--r1-txt)', bg:'var(--r1-bg)'};
-  if(v>=4) return {label:'Moderada', txt:'var(--r2-txt)', bg:'var(--r2-bg)'};
-  return {label:'Grave', txt:'var(--r3-txt)', bg:'var(--r3-bg)'};
-}
-function pillHtml(band){ return `<span class="pill" style="color:${band.txt};background:${band.bg}">${band.label}</span>`; }
-// Uma resposta é "válida para contagem" se não for null/undefined e não for o marcador
-// especial 'NA' (usado quando a pessoa marca "Não se aplica a mim / pular esta pergunta").
-function isAnswered(v){ return v!==null && v!==undefined && v!=='NA'; }
+/* Registro de instrumentos e versões. Nenhuma conversão automática para CIF. */
+const INSTRUMENT_META = {};
 
-function renderItemDetail(k, r){
- const q = QUESTIONNAIRES[k];
- const ans = r.rawAnswers;
- if(!ans) return '<p class="sub" style="margin:6px 0;">Sem detalhe item a item disponível.</p>';
- let rows = [];
- if(q.type==='sections'){
-  rows = q.data.map((sec,i)=>{
-   const [domain, opts] = sec;
-   const v = ans[i];
-   const txt = v==='NA' ? '<span style="color:var(--muted)">não se aplica / pulou</span>' : ((v!==null && v!==undefined) ? opts[v] : '<span style="color:var(--muted)">não respondido</span>');
-   return `<div style="padding:9px 0;border-bottom:1px dashed var(--line);"><div style="font-weight:600;font-size:13px;">${domain}</div><div style="font-size:13px;color:var(--ink);margin-top:2px;">${txt}</div></div>`;
-  });
- } else if(q.type==='likert'){
-  rows = q.items.map((item,i)=>{
-   const opts = q.optsPerItem ? q.optsPerItem[i] : q.opts;
-   const v = ans[i];
-   const txt = v==='NA' ? '<span style="color:var(--muted)">não se aplica / pulou</span>' : ((v!==null && v!==undefined) ? opts[v] : '<span style="color:var(--muted)">não respondido</span>');
-   return `<div style="padding:9px 0;border-bottom:1px dashed var(--line);"><div style="font-size:13px;color:var(--muted);">${item}</div><div style="font-size:13px;font-weight:600;margin-top:2px;">${txt}</div></div>`;
-  });
- } else if(q.type==='yesno'){
-  rows = q.items.map((item,i)=>{
-   const v = ans[i];
-   const txt = v==='NA' ? '<span style="color:var(--muted)">não se aplica / pulou</span>' : ((v===1) ? 'Sim' : (v===0 ? 'Não' : '<span style="color:var(--muted)">não respondido</span>'));
-   return `<div style="padding:9px 0;border-bottom:1px dashed var(--line);display:flex;justify-content:space-between;gap:14px;"><div style="font-size:13px;">${item}</div><div style="font-size:13px;font-weight:600;white-space:nowrap;">${txt}</div></div>`;
-  });
- } else if(q.type==='nmq'){
-  const yn=(v)=> v===1?'Sim':(v===0?'Não':'—');
-  rows = q.items.map((region,i)=>{
-   const a = ans[i];
-   if(!a || a.y12===null || a.y12===undefined) return `<div style="padding:9px 0;border-bottom:1px dashed var(--line);"><div style="font-weight:600;font-size:13px;">${region}</div><div style="font-size:13px;color:var(--muted);">não respondido</div></div>`;
-   return `<div style="padding:9px 0;border-bottom:1px dashed var(--line);"><div style="font-weight:600;font-size:13px;">${region}</div><div style="font-size:12.5px;color:var(--ink);margin-top:2px;">12 meses: ${yn(a.y12)} · Impediu atividade: ${yn(a.impede)} · Últimos 7 dias: ${yn(a.y7)}</div></div>`;
-  });
+function metaOf(k){return INSTRUMENT_META[k]||{status:'UNAVAILABLE',administrationBlocked:true,version:'unknown',note:'Instrumento não cadastrado.'};}
+const STATUS_MESSAGES=Object.freeze({VALID_OFFICIAL:'Resultado calculado conforme a versão identificada.',INCOMPLETE:'Aplicação incompleta — sem score.',LICENSE_REQUIRED:'Incorporação depende de autorização do titular.',UNAVAILABLE:'Aplicação indisponível: consulte a justificativa específica.',LEGACY_INVALID:'Aplicação histórica incompatível — dados preservados, sem recálculo.',INVALID_INPUT:'Respostas inválidas — sem score.'});
+const SCORING_VERSION='4.0.0-versioned-clinimetry';
+const BLOCKED_MESSAGE='Instrumento indisponível para esta aplicação. Consulte a justificativa no painel profissional.';
+function statusLabel(s){return ({VALID_OFFICIAL:'Concluído',INCOMPLETE:'Incompleto',LICENSE_REQUIRED:'Autorização necessária',UNAVAILABLE:'Indisponível',LEGACY_INVALID:'Histórico incompatível',INVALID_INPUT:'Dados inválidos'})[s]||'Histórico incompatível';}
+function administrationLabel(k){return metaOf(k).note;}
+function canAdministerInstrument(k){return !!CURRENT_VALIDATED_INSTRUMENTS[k]&&metaOf(k).status==='VALID_OFFICIAL'&&!metaOf(k).administrationBlocked;}
+const ASSIGNMENT_ALIASES=Object.freeze({fabqpa:'fabq',sss:'wpi'});
+function activeKeys(keys){return [...new Set((keys||QORDER).map(k=>ASSIGNMENT_ALIASES[k]||k))].filter(canAdministerInstrument);}
+function isAnswered(v){return v!==null&&v!==undefined&&v!=='NA';}
+function countValidAnswers(a){return Array.isArray(a)?a.filter(isAnswered).length:0;}
+function itemComplete(q,i,v){
+ if(!isAnswered(v))return false;
+ if(q.isItemComplete)return q.isItemComplete(i,v);
+ if(q.type==='psfs')return !v.skipped&&!!v.activity.trim()&&Number.isInteger(v.score);
+ return Number.isInteger(v);
+}
+function answerErrors(k,a){
+ const q=CURRENT_VALIDATED_INSTRUMENTS[k],errors=[];
+ if(!q)return ['Instrumento sem formulário atual habilitado'];
+ const len=q.type==='sections'?q.data.length:q.items.length;
+ if(!Array.isArray(a)||a.length!==len)return ['Comprimento inválido: esperado '+len];
+ const integer=(v,max)=>Number.isInteger(v)&&v>=0&&v<=max;
+ for(let i=0;i<len;i++){
+  const v=a[i];let ok=false;
+  if(v===null)ok=q.answerPolicy.allowNull;
+  else if(v==='NA')ok=q.answerPolicy.allowNA;
+  else if(q.validateItem)ok=q.validateItem(i,v);
+  else if(q.type==='sections')ok=integer(v,q.data[i][1].length-1);
+  else if(q.type==='likert')ok=integer(v,(q.optsPerItem?q.optsPerItem[i]:q.opts).length-1);
+  else if(q.type==='yesno')ok=integer(v,1);
+  else if(q.type==='sliders')ok=integer(v,10);
+  else if(q.type==='psfs')ok=!!v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).sort().join(',')==='activity,score,skipped'&&typeof v.activity==='string'&&v.activity.length<=1000&&typeof v.skipped==='boolean'&&(v.score===null||integer(v.score,10));
+  if(!ok)errors.push('Item '+(i+1)+': resposta inválida');
  }
- if(!rows.length) return '';
- return `<div style="margin-top:6px;padding-top:2px;">${rows.join('')}</div>`;
+ return errors;
 }
-
-function buildReportText(p){
- const lines = [];
- lines.push('AVALIAÇÃO FUNCIONAL — '+p.name);
- lines.push('Registro criado em: '+new Date(p.created_at).toLocaleString('pt-BR'));
- lines.push('');
- const keys = Object.keys(p.responses||{});
- if(!keys.length){ lines.push('Nenhum questionário respondido ainda.'); return lines.join('\n'); }
- keys.forEach(k=>{
-  const r = p.responses[k];
-  const qdef = QUESTIONNAIRES[k];
-  const ans = r.rawAnswers;
-  lines.push('='.repeat(60));
-  lines.push(qdef.title);
-  lines.push('='.repeat(60));
-
-  if(k==='eva'){
-   qdef.items.forEach((label,i)=>{ lines.push(label+': '+(r.answers[i]??'-')+'/10'); });
-  } else if(k==='psfs'){
-   (r.activities||[]).forEach(a=>{ if(a && !a.skipped && a.activity) lines.push((a.activity||'(sem nome)')+': '+(a.score??'-')+'/10'); });
-  } else if(k==='dn4'){
-   lines.push('Resultado: '+r.raw+'/7 itens positivos (corte usual: \u22653/7 sugere dor neuropática)');
-   lines.push('');
-   qdef.items.forEach((item,i)=>{
-    const v = ans ? ans[i] : null;
-    lines.push(item+' '+(v===1?'Sim':(v===0?'Não':'(não respondido)')));
-   });
-  } else if(k==='mjoa'){
-   const band = mjoaBand(r.raw, r.maxPossible);
-   lines.push('Resultado: '+r.raw+'/'+(r.maxPossible||18)+' pontos — '+band.label);
-   lines.push('');
-   qdef.data.forEach((sec,i)=>{
-    const [domain, opts] = sec;
-    const v = ans ? ans[i] : null;
-    lines.push(domain+': '+((isAnswered(v))?opts[v]:'(não respondido)'));
-   });
-  } else if(k==='nmq'){
-   lines.push('Resultado: '+r.y12count+' regiões com sintoma nos últimos 12 meses · '+r.y7count+' nos últimos 7 dias · '+r.impedeCount+' com impacto funcional');
-   if(r.regions && r.regions.length) lines.push('Regiões afetadas: '+r.regions.join(', '));
-   lines.push('');
-   qdef.items.forEach((region,i)=>{
-    const a = ans ? ans[i] : null;
-    const yn=(v)=> v===1?'Sim':(v===0?'Não':'—');
-    if(!a || a.y12===null || a.y12===undefined){ lines.push(region+': não respondido'); return; }
-    lines.push(region+' — 12 meses: '+yn(a.y12)+' · Impediu atividade: '+yn(a.impede)+' · Últimos 7 dias: '+yn(a.y7));
-   });
-  } else if(k==='ict'){
-   if(r.incomplete || r.raw===null){
-    lines.push('Resultado: '+r.n+'/11 itens respondidos — incompleto. O cálculo do total oficial do WAI exige os 11 itens respondidos (nenhum como "não se aplica"). Complete todos os itens para obter a classificação.');
-   } else {
-    const band = ictBand(r.raw);
-    lines.push('Resultado: '+r.raw+'/49 pontos — '+band.label+' (referência oficial: 7-27 baixa, 28-36 moderada, 37-43 boa, 44-49 excelente).');
-   }
-   lines.push('');
-   qdef.data.forEach((sec,i)=>{
-    const [domain, opts] = sec;
-    const v = ans ? ans[i] : null;
-    lines.push(domain+': '+(v==='NA'?'(não se aplica / pulou)':(isAnswered(v)?opts[v]:'(não respondido)')));
-   });
-  } else if(k==='wpi'){
-   lines.push('Resultado: WPI = '+r.raw+'/19 regiões com dor na última semana. Critério ACR de fibromialgia: WPI \u22657 (com SSS \u22655) OU WPI 4-6 (com SSS \u22659) — ver resultado do SSS.');
-   lines.push('');
-   qdef.items.forEach((region,i)=>{
-    const v = ans ? ans[i] : null;
-    lines.push(region+': '+(v===1?'Sim':(v===0?'Não':'(não respondido)')));
-   });
-  } else if(k==='sss'){
-   lines.push('Resultado: SSS = '+r.raw+'/12 pontos. Critério ACR de fibromialgia: SSS \u22655 (com WPI \u22657) OU SSS \u22659 (com WPI 4-6) — ver resultado do WPI.');
-   lines.push('');
-   qdef.data.forEach((sec,i)=>{
-    const [domain, opts] = sec;
-    const v = ans ? ans[i] : null;
-    lines.push(domain+': '+((isAnswered(v))?opts[v]:'(não respondido)'));
-   });
-  } else if(k==='hads'){
-   lines.push('Resultado: Ansiedade = '+r.anxSum+'/21 pontos · Depressão = '+r.depSum+'/21 pontos. Referência usual por subescala: 0-7 normal, 8-10 leve/limítrofe, \u226511 clinicamente significativo.');
-   lines.push('');
-   qdef.items.forEach((item,i)=>{
-    const v = ans ? ans[i] : null;
-    lines.push((i<7?'[Ansiedade] ':'[Depressão] ')+item+' '+((isAnswered(v))?qdef.opts[v]:'(não respondido)'));
-   });
-  } else if(k==='csi'){
-   const band = csiBand(r.raw);
-   lines.push('Resultado: '+r.raw+'/100 pontos — Sensibilização central: '+band.label+' (referência: <30 subclínica, 30-39 leve, 40-49 moderada, 50-59 grave, \u226560 extrema).');
-   lines.push('');
-   qdef.items.forEach((item,i)=>{
-    const v = ans ? ans[i] : null;
-    lines.push(item+' '+((isAnswered(v))?qdef.opts[v]:'(não respondido)'));
-   });
-  } else if(k==='orebro'){
-   const band = orebroBand(r.raw);
-   lines.push('Resultado: '+r.raw+'/100 (normalizado) — '+band.label+' (referência aproximada: \u226550 alto risco de cronificação/não retorno ao trabalho). ATENÇÃO: os pontos de corte oficiais do Örebro foram validados sobre a soma bruta dos itens originais; aqui o resultado foi normalizado para 0-100 pela pontuação máxima possível — trate como aproximação e não como o escore oficial exato.');
-   lines.push('');
-   qdef.data.forEach((sec,i)=>{
-    const [domain, opts] = sec;
-    const v = ans ? ans[i] : null;
-    lines.push(domain+': '+((isAnswered(v))?opts[v]:'(não respondido)'));
-   });
-  } else if(k==='ess'){
-   const band = essBand(r.raw);
-   lines.push('Resultado: '+r.raw+'/24 pontos — '+band.label+' (referência: 0-9 normal, 10-15 sonolência excessiva, \u226516 grave).');
-   lines.push('');
-   qdef.items.forEach((item,i)=>{
-    const v = ans ? ans[i] : null;
-    lines.push(item+' '+((isAnswered(v))?qdef.opts[v]:'(não respondido)'));
-   });
-  } else if(k==='chalder'){
-   lines.push('Resultado: Fadiga física = '+r.physSum+'/21 pontos · Fadiga mental = '+r.mentSum+'/12 pontos (total '+r.raw+'/33).');
-   lines.push('');
-   qdef.items.forEach((item,i)=>{
-    const v = ans ? ans[i] : null;
-    lines.push((i<7?'[Física] ':'[Mental] ')+item+' '+((isAnswered(v))?qdef.opts[v]:'(não respondido)'));
-   });
-  } else if(k==='sf36'){
-   lines.push('Resultado por domínio (escala oficial: 0 = pior saúde possível, 100 = melhor saúde possível):');
-   r.domains.forEach(d=>{
-    lines.push('- '+d.label+': '+(d.pct!==null?d.pct.toFixed(0)+'%':'não respondido')+' ('+d.n+'/'+d.total+' itens respondidos)');
-   });
-   lines.push('');
-   qdef.data.forEach((sec,i)=>{
-    const [domain, opts] = sec;
-    const v = ans ? ans[i] : null;
-    lines.push(domain+': '+((isAnswered(v))?opts[v]:'(não respondido)'));
-   });
-  } else if(k==='masq'){
-   lines.push('Resultado por domínio (quanto maior o percentual, mais frequente a queixa cognitiva):');
-   r.domains.forEach(d=>{
-    lines.push('- '+d.label+': '+(d.pct!==null?d.pct.toFixed(0)+'%':'não respondido')+' ('+d.n+'/'+d.total+' itens respondidos)');
-   });
-   lines.push('');
-   qdef.items.forEach((item,i)=>{
-    const v = ans ? ans[i] : null;
-    lines.push(item+' '+((isAnswered(v))?qdef.opts[v]:'(não respondido)'));
-   });
-  } else {
-   const band = cifBand(r.pct);
-   let summary = 'Resultado: '+r.pct.toFixed(0)+'% — '+band.label+' (qualificador CIF '+band.q+')';
-   if(k==='pcs'){ summary += ' · '+r.raw+'/52 pontos (corte clínico usual: \u226530)'; }
-   if(k==='fabq'){ summary += ' · '+r.raw+'/42 pontos (corte usual: \u226534)'; }
-   if(k==='fabqpa'){ summary += ' · '+r.raw+'/24 pontos'; }
-   if(k==='rmdq'){ summary += ' · '+r.raw+'/24 itens marcados'; }
-   if(k==='hit6'){ summary += ' · '+r.raw+' pontos, soma simplificada (o escore oficial usa pesos por item — confira antes de citar categoria de impacto no laudo)'; }
-   if(k==='comi'){ summary += ' · '+r.raw+'/'+r.maxPossible+' pontos'; }
-   lines.push(summary);
-   lines.push('');
-   if(qdef.type==='sections'){
-    qdef.data.forEach((sec,i)=>{
-     const [domain, opts] = sec;
-     const v = ans ? ans[i] : null;
-     lines.push(domain+': '+(v==='NA'?'(não se aplica / pulou)':(isAnswered(v)?opts[v]:'(não respondido)')));
-    });
-   } else if(qdef.type==='likert'){
-    qdef.items.forEach((item,i)=>{
-     const opts = qdef.optsPerItem ? qdef.optsPerItem[i] : qdef.opts;
-     const v = ans ? ans[i] : null;
-     lines.push(item+' '+(v==='NA'?'(não se aplica / pulou)':(isAnswered(v)?opts[v]:'(não respondido)')));
-    });
-   } else if(qdef.type==='yesno'){
-    qdef.items.forEach((item,i)=>{
-     const v = ans ? ans[i] : null;
-     lines.push(item+' '+(v==='NA'?'(não se aplica / pulou)':(v===1?'Sim':(v===0?'Não':'(não respondido)'))));
-    });
-   }
-  }
-  lines.push('');
+function validateAnswers(k,a){return !answerErrors(k,a).length;}
+function cloneAnswers(a){return a===undefined?null:JSON.parse(JSON.stringify(a));}
+function validateAndScore(k,a){
+ const meta=metaOf(k),q=CURRENT_VALIDATED_INSTRUMENTS[k];
+ const result={status:meta.status,n:0,instrumentVersion:meta.version,scoringVersion:SCORING_VERSION,answeredAt:new Date().toISOString(),rawAnswers:cloneAnswers(a)};
+ if(!canAdministerInstrument(k))return result;
+ const errors=answerErrors(k,a);
+ if(errors.length)return {...result,status:'INVALID_INPUT'};
+ result.n=a.filter((v,i)=>itemComplete(q,i,v)).length;
+ if(result.n<meta.minAnswered||(q.complete&&!q.complete(a)))return {...result,status:'INCOMPLETE'};
+ return {...q.score(cloneAnswers(a)),...result,status:'VALID_OFFICIAL'};
+}
+function effectiveStatus(k,r){
+ if(!r||r.instrumentVersion!==metaOf(k).version||r.scoringVersion!==SCORING_VERSION)return 'LEGACY_INVALID';
+ if(!canAdministerInstrument(k))return metaOf(k).status;
+ if(!['VALID_OFFICIAL','INCOMPLETE','INVALID_INPUT'].includes(r.status))return 'INVALID_INPUT';
+ const checked=validateAndScore(k,r.rawAnswers);
+ if(checked.status!==r.status)return checked.status==='VALID_OFFICIAL'?'INVALID_INPUT':checked.status;
+ // A changed score cannot be presented as official; historical versions are never rescored.
+ if(r.status==='VALID_OFFICIAL'&&(JSON.stringify(r.metrics)!==JSON.stringify(checked.metrics)||JSON.stringify(r.calculation)!==JSON.stringify(checked.calculation)))return 'INVALID_INPUT';
+ return r.status;
+}
+function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function numberText(n){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:2});}
+function scoreLines(k,r){
+ if(effectiveStatus(k,r)!=='VALID_OFFICIAL')return [STATUS_MESSAGES[effectiveStatus(k,r)]];
+ const lines=(r.metrics||[]).map(m=>m.name+': '+numberText(m.value)+'/'+m.max+' — '+m.direction+(m.answered!==undefined?' (respondidos: '+m.answered+'/'+m.items+')':''));
+ // Interpretive text also comes from the identified algorithm, never from an arbitrary database string.
+ const checked=validateAndScore(k,r.rawAnswers);
+ if(checked.interpretation)lines.push(checked.interpretation);
+ return lines.length?lines:['Resultado registrado por região; sem score global.'];
+}
+function responseLines(k,r){
+ const status=effectiveStatus(k,r),q=CURRENT_VALIDATED_INSTRUMENTS[k],meta=metaOf(k);
+ const lines=[STATUS_MESSAGES[status],'Data: '+(r.answeredAt||r.completedAt||'não registrada'),'Versão coletada: '+(r.instrumentVersion||'não registrada')];
+ if(status==='LEGACY_INVALID'||status==='INVALID_INPUT'||!q){lines.push('Respostas originais: '+JSON.stringify(r.rawAnswers??r.answers??r.activities??null));return lines;}
+ lines.push(...scoreLines(k,r),'Método: '+SCORING_VERSION,'Fonte: '+meta.source,'Validação brasileira: '+meta.brazilSource,'Regra de ausência: '+meta.missing);
+ if(meta.note)lines.push('Escopo: '+meta.note);
+ if(status==='VALID_OFFICIAL')lines.push('Memória de cálculo: '+JSON.stringify(r.calculation));
+ r.rawAnswers.forEach((v,i)=>{
+  const label=q.type==='sections'?q.data[i][0]:q.items[i];
+  if(!isAnswered(v)){lines.push(label+': não respondido');return;}
+  if(q.type==='psfs'){lines.push(label+': '+v.activity+' — '+(v.score??'não respondido')+'/10');return;}
+  if(q.type==='nmq'){lines.push(label+': '+Object.entries(NMQ_FIELDS).map(([f,t])=>t+' '+(v[f]===null?'não respondido':v[f]===1?'Sim':'Não')).join(' · '));return;}
+  if(q.special?.[i]==='diseases'){v.entries.forEach((n,j)=>lines.push(WAI_DISEASES[j]+': '+(['Não possuo','Minha opinião','Diagnóstico médico','Minha opinião e diagnóstico médico'][n]||'Não respondido')+(v.details[j]?' — '+v.details[j]:'')));return;}
+  if(q.special?.[i]==='multi'){lines.push(label+': '+v.map(n=>q.data[i][1][n]).join('; '));return;}
+  const answer=q.type==='sections'?q.data[i][1][v]:q.type==='likert'?(q.optsPerItem?q.optsPerItem[i]:q.opts)[v]:q.type==='yesno'?(v?'Sim':'Não'):v+'/10';
+  lines.push(label+': '+answer);
  });
+ return lines;
+}
+function renderItemDetail(k,r){return responseLines(k,r).map(t=>'<div style="padding:9px 0;border-bottom:1px dashed var(--line)">'+escapeHtml(t)+'</div>').join('');}
+function buildReportText(p){
+ const lines=['AVALIAÇÃO FUNCIONAL — '+p.name,'Registro criado em: '+new Date(p.created_at).toLocaleString('pt-BR'),''];
+ Object.entries(p.responses||{}).forEach(([k,r])=>lines.push('='.repeat(60),(effectiveStatus(k,r)==='LEGACY_INVALID'?LEGACY_INSTRUMENTS[k]?.title:QUESTIONNAIRES[k]?.title)||k,'Status: '+statusLabel(effectiveStatus(k,r)),...responseLines(k,r),''));
  return lines.join('\n');
 }
 
-/* ---------- Dados dos instrumentos ---------- */
-const ODI_SECTIONS = [
- ["Intensidade da dor",[
-  "Não sinto dor no momento","A dor é muito leve no momento","A dor é moderada no momento",
-  "A dor é razoavelmente intensa no momento","A dor é muito intensa no momento","A dor é a pior imaginável no momento"]],
- ["Cuidados pessoais (lavar-se, vestir-se etc.)",[
-  "Posso cuidar de mim normalmente, sem causar dor extra",
-  "Posso cuidar de mim normalmente, mas isso causa dor extra",
-  "É doloroso cuidar de mim, e sou lento e cuidadoso",
-  "Preciso de alguma ajuda, mas consigo fazer a maior parte dos cuidados pessoais",
-  "Preciso de ajuda todos os dias na maioria dos cuidados pessoais",
-  "Não consigo me vestir, lavo-me com dificuldade e fico na cama"]],
- ["Levantar objetos",[
-  "Consigo levantar objetos pesados sem dor extra",
-  "Consigo levantar objetos pesados, mas isso causa dor extra",
-  "A dor me impede de levantar objetos pesados do chão, mas consigo se estiverem bem posicionados (ex.: em uma mesa)",
-  "A dor me impede de levantar pesos, mas consigo objetos leves a moderados se bem posicionados",
-  "Só consigo levantar objetos muito leves",
-  "Não consigo levantar ou carregar nada"]],
- ["Andar",[
-  "A dor não me impede de andar qualquer distância","A dor me impede de andar mais que 1600 metros",
-  "A dor me impede de andar mais que 800 metros","A dor me impede de andar mais que 400 metros",
-  "Só consigo andar usando bengala ou muletas","Fico na cama a maior parte do tempo e preciso me arrastar até o banheiro"]],
- ["Sentar",[
-  "Consigo sentar em qualquer tipo de cadeira o tempo que quiser",
-  "Só consigo sentar na minha cadeira preferida o tempo que quiser",
-  "A dor me impede de sentar por mais de 1 hora","A dor me impede de sentar por mais de 30 minutos",
-  "A dor me impede de sentar por mais de 10 minutos","A dor me impede totalmente de sentar"]],
- ["Ficar em pé",[
-  "Consigo ficar em pé o tempo que quiser sem dor extra",
-  "Consigo ficar em pé o tempo que quiser, mas isso causa dor extra",
-  "A dor me impede de ficar em pé por mais de 1 hora","A dor me impede de ficar em pé por mais de 30 minutos",
-  "A dor me impede de ficar em pé por mais de 10 minutos","A dor me impede totalmente de ficar em pé"]],
- ["Dormir",[
-  "Meu sono nunca é perturbado pela dor","Meu sono é ocasionalmente perturbado pela dor",
-  "Por causa da dor, durmo menos de 6 horas","Por causa da dor, durmo menos de 4 horas",
-  "Por causa da dor, durmo menos de 2 horas","A dor me impede totalmente de dormir"]],
- ["Vida sexual (se aplicável)",[
-  "Minha vida sexual é normal e não causa dor extra",
-  "Minha vida sexual é normal, mas causa alguma dor extra",
-  "Minha vida sexual é quase normal, mas é bastante dolorosa",
-  "Minha vida sexual é bastante restringida pela dor",
-  "Minha vida sexual é quase inexistente por causa da dor","A dor impede totalmente qualquer vida sexual"]],
- ["Vida social",[
-  "Minha vida social é normal e não causa dor extra",
-  "Minha vida social é normal, mas aumenta a intensidade da dor",
-  "A dor não tem efeito significativo na vida social, exceto limitar atividades mais intensas (ex.: esportes)",
-  "A dor restringiu minha vida social e não saio com a mesma frequência",
-  "A dor restringiu minha vida social ao meu domicílio","Não tenho vida social por causa da dor"]],
- ["Viagens / locomoção",[
-  "Consigo viajar para qualquer lugar sem dor","Consigo viajar para qualquer lugar, mas isso causa dor extra",
-  "A dor é forte, mas consigo viajar por mais de 2 horas","A dor limita minhas viagens a menos de 1 hora",
-  "A dor limita viagens curtas e necessárias, de menos de 30 minutos","A dor me impede de viajar, exceto para tratamento"]]
-];
-
-const NDI_SECTIONS = [
- ["Intensidade da dor",[
-  "Não sinto dor no momento","A dor é muito leve no momento","A dor é moderada no momento",
-  "A dor é razoavelmente intensa no momento","A dor é muito intensa no momento","A dor é a pior imaginável no momento"]],
- ["Cuidados pessoais",[
-  "Posso cuidar de mim normalmente, sem causar dor extra no pescoço",
-  "Posso cuidar de mim normalmente, mas isso causa dor extra","É doloroso cuidar de mim, e sou lento e cuidadoso",
-  "Preciso de alguma ajuda, mas consigo fazer a maior parte dos cuidados pessoais",
-  "Preciso de ajuda todos os dias na maioria dos cuidados pessoais",
-  "Não consigo me vestir, lavo-me com dificuldade e fico na cama"]],
- ["Levantar objetos",[
-  "Consigo levantar objetos pesados sem dor extra no pescoço",
-  "Consigo levantar objetos pesados, mas isso causa dor extra",
-  "A dor me impede de levantar objetos pesados do chão, mas consigo se estiverem bem posicionados",
-  "A dor me impede de levantar pesos, mas consigo objetos leves a moderados se bem posicionados",
-  "Só consigo levantar objetos muito leves","Não consigo levantar ou carregar nada"]],
- ["Leitura",[
-  "Posso ler o quanto quiser sem dor no pescoço","Posso ler o quanto quiser com leve dor no pescoço",
-  "Posso ler o quanto quiser com dor moderada no pescoço","Não consigo ler o quanto quiser por causa de dor moderada",
-  "Quase não consigo ler por causa de dor intensa","Não consigo ler nada"]],
- ["Dores de cabeça",[
-  "Não tenho dores de cabeça","Tenho dores de cabeça leves, pouco frequentes",
-  "Tenho dores de cabeça moderadas, pouco frequentes","Tenho dores de cabeça moderadas, frequentes",
-  "Tenho dores de cabeça intensas, frequentes","Tenho dores de cabeça quase o tempo todo"]],
- ["Concentração",[
-  "Consigo me concentrar totalmente quando quero, sem dificuldade",
-  "Consigo me concentrar totalmente quando quero, com leve dificuldade",
-  "Tenho dificuldade razoável em me concentrar quando quero","Tenho muita dificuldade em me concentrar quando quero",
-  "Tenho enorme dificuldade em me concentrar quando quero","Não consigo me concentrar de forma alguma"]],
- ["Trabalho",[
-  "Consigo trabalhar tanto quanto quiser","Só consigo fazer meu trabalho habitual, nada além disso",
-  "Consigo fazer a maior parte do meu trabalho habitual, mas não mais","Não consigo fazer meu trabalho habitual",
-  "Quase não consigo trabalhar","Não consigo trabalhar de forma alguma"]],
- ["Dirigir",[
-  "Consigo dirigir sem dor no pescoço","Consigo dirigir o quanto quero, com leve dor no pescoço",
-  "Consigo dirigir o quanto quero, com dor moderada no pescoço","Não consigo dirigir o quanto quero por causa da dor moderada",
-  "Quase não consigo dirigir por causa de dor intensa","Não consigo dirigir de forma alguma"]],
- ["Sono",[
-  "Não tenho problemas de sono","Meu sono é levemente perturbado (menos de 1h de insônia)",
-  "Meu sono é levemente perturbado (1 a 2h de insônia)","Meu sono é moderadamente perturbado (2 a 3h de insônia)",
-  "Meu sono é muito perturbado (3 a 5h de insônia)","Meu sono está completamente perturbado (5 a 7h de insônia)"]],
- ["Lazer / recreação",[
-  "Consigo realizar todas as minhas atividades de lazer sem dor no pescoço",
-  "Consigo realizar todas as minhas atividades de lazer, com alguma dor no pescoço",
-  "Consigo realizar a maioria, mas não todas, as atividades de lazer por causa da dor",
-  "Consigo realizar poucas das minhas atividades de lazer por causa da dor",
-  "Quase não consigo realizar atividades de lazer por causa da dor","Não consigo realizar nenhuma atividade de lazer"]]
-];
-
-const TSK13_ITEMS = [
- "Tenho medo de me machucar se fizer exercícios físicos.",
- "Se eu tentasse superar a dor, ela aumentaria.",
- "Meu corpo está me dizendo que algo está seriamente errado.",
- "A dor sempre significa que eu machuquei meu corpo.",
- "Simplesmente porque algo agrava minha dor, não significa que seja perigoso.",
- "Tenho medo de que eu possa me machucar acidentalmente.",
- "Manter-me cuidadoso para não fazer movimentos desnecessários é a coisa mais segura que posso fazer para evitar a dor.",
- "Eu não teria tanta dor se não houvesse algo potencialmente perigoso acontecendo no meu corpo.",
- "Embora minha condição seja dolorosa, eu estaria melhor se estivesse fisicamente ativo.",
- "A dor me avisa quando devo parar o exercício para não me machucar.",
- "Não é realmente seguro para uma pessoa com minha condição ser fisicamente ativa.",
- "Não consigo fazer todas as coisas que pessoas normais fazem porque é fácil para mim me machucar.",
- "Ninguém deveria precisar praticar exercícios físicos quando está com dor."
-];
-const TSK13_REVERSE = [4];
-const TSK13_OPTS = ["Discordo totalmente","Discordo","Concordo","Concordo totalmente"];
-
-const QUICKDASH_ITEMS = [
- ["Abrir um pote ou vidro novo com tampa apertada.",["Nenhuma dificuldade","Pouca dificuldade","Dificuldade moderada","Muita dificuldade","Incapaz"]],
- ["Fazer tarefas domésticas pesadas (ex.: lavar paredes, limpar o chão).",["Nenhuma dificuldade","Pouca dificuldade","Dificuldade moderada","Muita dificuldade","Incapaz"]],
- ["Carregar uma sacola de compras ou uma pasta.",["Nenhuma dificuldade","Pouca dificuldade","Dificuldade moderada","Muita dificuldade","Incapaz"]],
- ["Lavar as costas.",["Nenhuma dificuldade","Pouca dificuldade","Dificuldade moderada","Muita dificuldade","Incapaz"]],
- ["Usar uma faca para cortar alimentos.",["Nenhuma dificuldade","Pouca dificuldade","Dificuldade moderada","Muita dificuldade","Incapaz"]],
- ["Atividades recreativas com esforço ou impacto no braço/ombro/mão (ex.: martelar, jogar).",["Nenhuma dificuldade","Pouca dificuldade","Dificuldade moderada","Muita dificuldade","Incapaz"]],
- ["Na última semana, o quanto seu problema interferiu nas suas atividades sociais normais?",["Nada","Pouco","Moderadamente","Muito","Extremamente"]],
- ["Na última semana, você foi limitado no trabalho ou em outra atividade regular diária?",["Nada limitado","Pouco limitado","Moderadamente limitado","Muito limitado","Incapaz"]],
- ["Dor no braço, ombro ou mão.",["Nenhuma","Leve","Moderada","Intensa","Extrema"]],
- ["Dor ao realizar qualquer atividade específica com o braço, ombro ou mão.",["Nenhuma","Leve","Moderada","Intensa","Extrema"]],
- ["Dificuldade para dormir por causa da dor no braço, ombro ou mão.",["Nenhuma","Leve","Moderada","Intensa","Extrema"]]
-];
-
-const WHODAS_ITEMS = [
- "Ficar em pé por longos períodos, como 30 minutos.",
- "Cuidar das suas responsabilidades domésticas.",
- "Aprender uma nova tarefa (ex.: chegar a um lugar novo).",
- "Participar tanto quanto outras pessoas em atividades da comunidade (festas, religiosas, de bairro).",
- "Sentir-se afetado emocionalmente por seu problema de saúde.",
- "Caminhar uma longa distância, como 1 quilômetro.",
- "Lavar todo o corpo.",
- "Vestir-se.",
- "Lidar com pessoas que você não conhece.",
- "Manter uma amizade.",
- "Realizar seu trabalho diário / tarefas de casa.",
- "Sua condição de saúde te afetou financeiramente?"
-];
-const WHODAS_OPTS = ["Nenhuma dificuldade","Dificuldade leve","Dificuldade moderada","Dificuldade grave","Dificuldade extrema / não consegue fazer"];
-
-const DN4_ITEMS = [
- "A dor tem sensação de queimação?",
- "A dor dá sensação de frio dolorido?",
- "A dor vem em choques elétricos?",
- "A dor é acompanhada de formigamento?",
- "A dor é acompanhada de alfinetadas e agulhadas?",
- "A dor é acompanhada de dormência?",
- "A dor é acompanhada de coceira?"
-];
-
-const FABQ_TRABALHO_ITEMS = [
- "Minha dor foi causada por atividade física no trabalho ou por um acidente no trabalho.",
- "A atividade física agrava minha dor.",
- "Eu tenho o direito de receber compensação financeira pela minha dor relacionada ao trabalho.",
- "Meu trabalho é fisicamente pesado demais para mim.",
- "Meu trabalho piora, ou pioraria, minha dor.",
- "Meu trabalho pode causar dano à minha coluna/ao meu corpo.",
- "Eu não deveria fazer meu trabalho normal com a minha dor atual."
-];
-const FABQ_OPTS = ["0 — Discordo totalmente","1","2","3 — Neutro","4","5","6 — Concordo totalmente"];
-
-const PCS_ITEMS = [
- "Fico preocupado(a) o tempo todo pensando se a dor vai passar.",
- "Sinto que não consigo mais suportar.",
- "É terrível e acho que a dor nunca vai melhorar.",
- "É horrível e sinto que a dor domina completamente minha vida.",
- "Sinto que não aguento mais.",
- "Tenho medo de que a dor piore.",
- "Fico pensando em outras situações em que senti dor.",
- "Desejo ansiosamente que a dor desapareça.",
- "Não consigo tirar a dor da cabeça.",
- "Fico pensando o tempo todo em quanto isso dói.",
- "Fico pensando o tempo todo em como eu quero que a dor pare.",
- "Não há nada que eu possa fazer para reduzir a intensidade da dor.",
- "Fico pensando se pode acontecer algo grave comigo por causa da dor."
-];
-const PCS_OPTS = ["0 — Nunca","1 — Poucas vezes","2 — Moderadamente","3 — Muitas vezes","4 — Sempre"];
-
-const RMDQ_ITEMS = [
- "Fico em casa a maior parte do tempo por causa da minha coluna.",
- "Mudo de posição frequentemente tentando deixar minha coluna confortável.",
- "Ando mais devagar que o normal por causa da minha coluna.",
- "Por causa da minha coluna, não estou fazendo nenhum dos trabalhos que costumo fazer em casa.",
- "Por causa da minha coluna, uso o corrimão para subir escadas.",
- "Por causa da minha coluna, deito-me para descansar mais frequentemente.",
- "Por causa da minha coluna, preciso me apoiar em algo para me levantar de uma poltrona.",
- "Por causa da minha coluna, peço para outras pessoas fazerem coisas por mim.",
- "Visto-me mais devagar que o normal por causa da minha coluna.",
- "Só fico em pé por curtos períodos de tempo por causa da minha coluna.",
- "Por causa da minha coluna, tento não me abaixar ou ajoelhar.",
- "Sinto dificuldade em me levantar de uma cadeira por causa da minha coluna.",
- "Minha coluna dói quase o tempo todo.",
- "Tenho dificuldade em me virar na cama por causa da minha coluna.",
- "Meu apetite não é muito bom por causa da dor na minha coluna.",
- "Tenho problemas para colocar as meias por causa da dor na minha coluna.",
- "Só consigo andar distâncias curtas por causa da dor na minha coluna.",
- "Durmo pior por causa da minha coluna.",
- "Por causa da dor na minha coluna, preciso de ajuda para me vestir.",
- "Fico sentado a maior parte do dia por causa da minha coluna.",
- "Evito trabalhos pesados em casa por causa da minha coluna.",
- "Por causa da dor na coluna, fico mais irritado(a) e mal-humorado(a) com as pessoas do que o normal.",
- "Por causa da minha coluna, subo escadas mais devagar que o normal.",
- "Fico na cama a maior parte do tempo por causa da minha coluna."
-];
-
-const MJOA_MAX = [5,7,3,3];
-const MJOA_SECTIONS = [
- ["Função motora dos membros superiores (mãos e braços)",[
-  "Não consigo mover as mãos de forma alguma",
-  "Não consigo me alimentar sozinho(a) ou usar talheres por dormência/fraqueza nas mãos, mas consigo mover as mãos",
-  "Consigo segurar objetos como talheres, mas não consigo usá-los por dormência/fraqueza",
-  "Consigo segurar talheres, mas não uso bem por dormência/fraqueza",
-  "Consigo usar as mãos com leve falta de jeito",
-  "Nenhuma dificuldade"]],
- ["Função motora dos membros inferiores (pernas)",[
-  "Perda completa de movimento e sensibilidade nas pernas",
-  "Sensibilidade preservada, mas não consigo mover as pernas",
-  "Consigo mover as pernas, mas não consigo andar",
-  "Consigo andar em piso plano com apoio (bengala ou muleta)",
-  "Consigo subir e/ou descer escadas com apoio no corrimão",
-  "Falta de estabilidade moderada a importante, mas consigo subir/descer escadas sem corrimão",
-  "Leve falta de estabilidade, mas ando de forma suave e sem ajuda",
-  "Nenhuma dificuldade"]],
- ["Sensibilidade nas mãos e braços",[
-  "Perda completa de sensibilidade nas mãos",
-  "Perda importante de sensibilidade, ou dor",
-  "Perda leve de sensibilidade",
-  "Sensibilidade normal"]],
- ["Controle da urina (função esfincteriana)",[
-  "Não consigo urinar por vontade própria (retenção completa)",
-  "Dificuldade importante para urinar (retenção acentuada, esforço para urinar, ou perdas urinárias)",
-  "Dificuldade leve a moderada (urgência, aumento da frequência, hesitação)",
-  "Normal"]]
-];
-
-const PSFS_STEPS = [
- "Atividade 1 de 3 — pense em algo que você tem dificuldade de fazer hoje por causa do problema",
- "Atividade 2 de 3",
- "Atividade 3 de 3"
-];
-
-const WIQ_ABILITY_OPTS = ["Incapaz de fazer","Muita dificuldade","Dificuldade moderada","Pouca dificuldade","Nenhuma dificuldade"];
-const WIQ_ITEMS = [
- "Andar dentro de casa, de um cômodo a outro.",
- "Andar cerca de 50 metros (por exemplo, até o portão de casa e voltar).",
- "Andar cerca de 150 metros (mais ou menos meio quarteirão).",
- "Andar cerca de 300 metros (mais ou menos um quarteirão).",
- "Andar cerca de 900 metros (mais ou menos três quarteirões).",
- "Andar bem devagar.",
- "Andar num ritmo normal.",
- "Andar rápido.",
- "Correr uma curta distância.",
- "Subir 1 andar de escada.",
- "Subir 2 andares de escada.",
- "Subir 3 andares de escada."
-];
-
-const LEFS_OPTS = ["Dificuldade extrema ou incapaz de fazer","Muita dificuldade","Dificuldade moderada","Pouca dificuldade","Nenhuma dificuldade"];
-const LEFS_ITEMS = [
- "Qualquer uma das suas atividades domésticas habituais.",
- "Seus hobbies, atividades recreativas ou esportes.",
- "Entrar ou sair de dentro de um carro.",
- "Caminhar de um cômodo a outro da casa.",
- "Colocar ou tirar meias.",
- "Agachar-se.",
- "Levantar um objeto do chão, como uma sacola de compras.",
- "Realizar atividades domésticas leves.",
- "Realizar atividades domésticas pesadas.",
- "Entrar ou sair da banheira/box do banho.",
- "Andar cerca de 300 metros.",
- "Subir ou descer cerca de 10 degraus (mais ou menos um lance de escada).",
- "Ficar em pé por 1 hora.",
- "Ficar sentado(a) por 1 hora.",
- "Correr em terreno plano.",
- "Correr em terreno irregular.",
- "Fazer curvas ou mudar de direção rapidamente enquanto anda ou corre.",
- "Pular.",
- "Rolar na cama.",
- "Sua atividade de trabalho habitual, do jeito que você normalmente faz."
-];
-
-const SFI_SECTIONS = [
- ["Intensidade da dor na coluna (do pescoço até a lombar), no momento",[
-  "Não sinto dor na coluna",
-  "A dor é leve",
-  "A dor é moderada",
-  "A dor é intensa",
-  "A dor é a pior imaginável"]],
- ["Cuidados pessoais (vestir-se, lavar-se, calçar-se)",[
-  "Nenhuma dificuldade por causa da coluna",
-  "Um pouco de dificuldade, mas consigo fazer sozinho(a)",
-  "Preciso de mais tempo ou de algum cuidado extra",
-  "Preciso de ajuda em parte das tarefas",
-  "Preciso de ajuda para a maioria das tarefas"]],
- ["Levantar objetos do chão",[
-  "Nenhuma dificuldade por causa da coluna",
-  "Um pouco de dificuldade com objetos pesados",
-  "Dificuldade moderada, evito objetos pesados",
-  "Só consigo levantar objetos leves",
-  "Não consigo levantar nada do chão"]],
- ["Andar",[
-  "A coluna não me impede de andar qualquer distância",
-  "A coluna me impede de andar longas distâncias",
-  "A coluna me impede de andar distâncias moderadas",
-  "A coluna me impede de andar mesmo distâncias curtas",
-  "Praticamente não consigo andar por causa da coluna"]],
- ["Sentar",[
-  "Consigo sentar o tempo que quiser sem problema",
-  "Consigo sentar por longos períodos, com algum desconforto",
-  "A dor me impede de sentar por mais de 1 hora",
-  "A dor me impede de sentar por mais de 30 minutos",
-  "A dor me impede quase totalmente de sentar"]],
- ["Ficar em pé",[
-  "Consigo ficar em pé o tempo que quiser sem problema",
-  "Consigo ficar em pé por longos períodos, com algum desconforto",
-  "A dor me impede de ficar em pé por mais de 1 hora",
-  "A dor me impede de ficar em pé por mais de 30 minutos",
-  "A dor me impede quase totalmente de ficar em pé"]],
- ["Dormir",[
-  "Meu sono nunca é perturbado pela dor na coluna",
-  "Meu sono é ocasionalmente perturbado",
-  "Meu sono é perturbado com frequência",
-  "Durmo poucas horas por causa da dor",
-  "A dor me impede quase totalmente de dormir"]],
- ["Atividades sociais e de lazer",[
-  "Minha vida social é normal, sem limitação pela coluna",
-  "Minha vida social é normal, mas com algum desconforto",
-  "Reduzi algumas atividades sociais/de lazer por causa da coluna",
-  "Reduzi bastante minhas atividades sociais/de lazer",
-  "Praticamente não tenho vida social por causa da coluna"]],
- ["Viajar (dirigir, andar de carro ou ônibus)",[
-  "Consigo viajar para qualquer lugar sem problema",
-  "Consigo viajar, mas com algum desconforto",
-  "A dor limita viagens mais longas",
-  "A dor limita até viagens curtas",
-  "A dor praticamente me impede de viajar"]],
- ["Capacidade de realizar seu trabalho habitual",[
-  "Nenhuma limitação da coluna para o trabalho",
-  "Pequena limitação, consigo fazer quase tudo",
-  "Limitação moderada, preciso adaptar tarefas",
-  "Limitação importante, faço poucas das tarefas habituais",
-  "Não consigo realizar o trabalho habitual por causa da coluna"]]
-];
-
-const NMQ_REGIONS = ["Pescoço","Ombros","Região torácica (parte de cima das costas)","Cotovelos","Região lombar (parte de baixo das costas)","Punhos e mãos","Quadril e coxas","Joelhos","Tornozelos e pés"];
-
-const ICT_SECTIONS = [
- ["As exigências do seu trabalho são, principalmente:",[
-  "Principalmente mentais","Principalmente físicas","Tanto mentais quanto físicas, igualmente"]],
- ["Capacidade atual para o trabalho, comparada à melhor capacidade de toda a sua vida (0 a 10)",[
-  "0 — Totalmente incapaz de trabalhar","1","2","3","4","5 — Capacidade moderada","6","7","8","9","10 — Capacidade no seu melhor momento de vida"]],
- ["Capacidade de trabalho em relação às exigências físicas do seu trabalho",[
-  "Muito baixa","Baixa","Moderada","Boa","Muito boa"]],
- ["Capacidade de trabalho em relação às exigências mentais do seu trabalho",[
-  "Muito baixa","Baixa","Moderada","Boa","Muito boa"]],
- ["Número de doenças atuais diagnosticadas por um médico",[
-  "Nenhuma","1 doença","2 ou 3 doenças","4 ou mais doenças"]],
- ["Seu problema de saúde é um obstáculo para o seu trabalho atual?",[
-  "Não há obstáculo / não tenho doenças",
-  "Consigo fazer meu trabalho, mas ele me causa alguns sintomas",
-  "Às vezes preciso reduzir o ritmo ou mudar a forma de trabalhar",
-  "Frequentemente preciso reduzir o ritmo ou mudar a forma de trabalhar",
-  "Por causa da doença, só consigo trabalhar em tempo parcial",
-  "Na minha opinião, sou totalmente incapaz de trabalhar"]],
- ["Quantos dias inteiros você ficou afastado do trabalho por um problema de saúde nos últimos 12 meses?",[
-  "Nenhum dia","Até 9 dias","De 10 a 24 dias","De 25 a 99 dias","De 100 a 365 dias"]],
- ["Você acredita que, do ponto de vista da sua saúde, conseguirá fazer seu trabalho atual dentro de 2 anos?",[
-  "Pouco provável","Não tenho certeza","Relativamente certo que sim"]],
- ["Nos últimos tempos, você tem conseguido sentir prazer nas suas atividades diárias habituais?",[
-  "Nunca","Raramente","Às vezes","Frequentemente","Sempre"]],
- ["Nos últimos tempos, você tem se sentido ativo(a) e alerta?",[
-  "Nunca","Raramente","Às vezes","Frequentemente","Sempre"]],
- ["Nos últimos tempos, você tem se sentido cheio(a) de esperança em relação ao futuro?",[
-  "Nunca","Raramente","Às vezes","Frequentemente","Sempre"]]
-];
-
-/* ---- FIQR (Fibromyalgia Impact Questionnaire — Revised) ---- */
-const FIQR_FUNC_OPTS = ["0 — Nenhuma dificuldade","1","2","3","4","5 — Dificuldade moderada","6","7","8","9","10 — Não consigo fazer"];
-const FIQR_IMPACT_OPTS = ["0 — Nada","1","2","3","4","5 — Moderadamente","6","7","8","9","10 — Totalmente"];
-const FIQR_SYMPTOM_OPTS = ["0 — Nenhum(a)","1","2","3","4","5 — Moderado(a)","6","7","8","9","10 — O pior possível"];
-const FIQR_ITEMS = [
- ["Fazer compras",FIQR_FUNC_OPTS],
- ["Lavar e passar roupa",FIQR_FUNC_OPTS],
- ["Preparar refeições",FIQR_FUNC_OPTS],
- ["Lavar louça à mão, passar pano ou aspirar",FIQR_FUNC_OPTS],
- ["Arrumar a cama",FIQR_FUNC_OPTS],
- ["Andar longas distâncias",FIQR_FUNC_OPTS],
- ["Visitar amigos ou familiares",FIQR_FUNC_OPTS],
- ["Fazer atividades ao ar livre (jardim, caminhada)",FIQR_FUNC_OPTS],
- ["Trocar de posição na cama para dormir",FIQR_FUNC_OPTS],
- ["O quanto a fibromialgia te impede de atingir seus objetivos pessoais e profissionais",FIQR_IMPACT_OPTS],
- ["O quanto você se sente sobrecarregado(a) ou estressado(a) por causa da fibromialgia",FIQR_IMPACT_OPTS],
- ["Dor",FIQR_SYMPTOM_OPTS],
- ["Falta de energia (fadiga)",FIQR_SYMPTOM_OPTS],
- ["Rigidez",FIQR_SYMPTOM_OPTS],
- ["Qualidade do sono (sono não reparador)",FIQR_SYMPTOM_OPTS],
- ["Depressão",FIQR_SYMPTOM_OPTS],
- ["Problemas de memória",FIQR_SYMPTOM_OPTS],
- ["Ansiedade",FIQR_SYMPTOM_OPTS],
- ["Sensibilidade ao toque",FIQR_SYMPTOM_OPTS],
- ["Equilíbrio",FIQR_SYMPTOM_OPTS],
- ["Sensibilidade a ruído, luz, frio ou perfume",FIQR_SYMPTOM_OPTS]
-];
-
-/* ---- WPI (Widespread Pain Index — critério ACR de fibromialgia) ---- */
-const WPI_REGIONS = [
- "Ombro esquerdo","Ombro direito","Braço (parte de cima) esquerdo","Braço (parte de cima) direito",
- "Antebraço esquerdo","Antebraço direito","Quadril/nádega/trocânter esquerdo","Quadril/nádega/trocânter direito",
- "Mandíbula esquerda","Mandíbula direita","Tórax","Abdome","Pescoço","Costas (parte de cima)","Costas (parte de baixo)",
- "Coxa esquerda","Coxa direita","Perna esquerda (abaixo do joelho)","Perna direita (abaixo do joelho)"
-];
-
-/* ---- SSS (Symptom Severity Scale — companheira do WPI) ---- */
-const SSS_SCALE_OPTS = ["Nenhum problema","Leve ou ocasional","Moderado, presente na maior parte do tempo","Severo, generalizado, constante, prejudica muito a vida"];
-const SSS_OTHER_OPTS = ["Nenhum desses sintomas (nos últimos 6 meses)","Poucos desses sintomas","Um número moderado desses sintomas","Muitos desses sintomas"];
-const SSS_SECTIONS = [
- ["Fadiga",SSS_SCALE_OPTS],
- ["Sono não reparador (dormir e não sentir que descansou)",SSS_SCALE_OPTS],
- ["Sintomas cognitivos (memória, concentração, \"névoa mental\")",SSS_SCALE_OPTS],
- ["Outros sintomas nos últimos 6 meses (dor de cabeça, dor/cólica abdominal, depressão, e outros sintomas somáticos)",SSS_OTHER_OPTS]
-];
-
-/* ---- HOOS (quadril) e KOOS (joelho) — mesma escala de dificuldade ---- */
-const JOINT_DIFF_OPTS = ["Nenhuma dificuldade","Dificuldade leve","Dificuldade moderada","Dificuldade grave","Dificuldade extrema / incapaz"];
-const HOOS_ITEMS = [
- "Dor ao girar/pivotear apoiado no quadril",
- "Dor ao ficar com o quadril totalmente esticado",
- "Dor ao subir ou descer escadas",
- "Dor à noite, na cama, por causa do quadril",
- "Rigidez no quadril ao acordar de manhã",
- "Amplitude de movimento limitada no quadril",
- "Ruídos ou estalos no quadril",
- "Descer escadas",
- "Subir escadas",
- "Levantar-se de uma posição sentada",
- "Ficar em pé por longos períodos",
- "Calçar meias ou sapatos",
- "Correr",
- "Agachar-se",
- "Dificuldade em geral com o quadril nas suas atividades do dia a dia",
- "Falta de confiança no seu quadril"
-];
-const KOOS_ITEMS = [
- "Dor ao girar/pivotear apoiado no joelho",
- "Dor ao ficar com o joelho totalmente esticado",
- "Dor ao subir ou descer escadas",
- "Dor à noite, na cama, por causa do joelho",
- "Rigidez no joelho ao acordar de manhã",
- "Inchaço no joelho",
- "Sensação de estalos ou crepitação no joelho",
- "Descer escadas",
- "Subir escadas",
- "Levantar-se de uma posição sentada",
- "Ficar em pé por longos períodos",
- "Agachar-se",
- "Correr",
- "Ajoelhar-se",
- "Dificuldade em geral com o joelho nas suas atividades do dia a dia",
- "Falta de confiança no seu joelho"
-];
-
-/* ---- FSS (Fatigue Severity Scale) ---- */
-const FSS_OPTS = ["1 — Discordo totalmente","2","3","4 — Neutro","5","6","7 — Concordo totalmente"];
-const FSS_ITEMS = [
- "Minha motivação é menor quando estou com fadiga.",
- "O exercício físico me deixa fatigado(a).",
- "Fico facilmente fatigado(a).",
- "A fadiga interfere no meu funcionamento físico.",
- "A fadiga me causa problemas frequentes.",
- "A fadiga impede que eu mantenha um funcionamento físico contínuo.",
- "A fadiga interfere na realização de certas tarefas e responsabilidades.",
- "A fadiga é um dos meus três sintomas mais incapacitantes.",
- "A fadiga interfere no meu trabalho, na família ou na vida social."
-];
-
-/* ---- PSQI (Índice de Qualidade do Sono de Pittsburgh) — 7 componentes ---- */
-const PSQI_SECTIONS = [
- ["Como você classificaria a qualidade geral do seu sono?",[
-  "Muito boa","Boa","Ruim","Muito ruim"]],
- ["Nas últimas semanas, quanto tempo você geralmente demora para pegar no sono?",[
-  "15 minutos ou menos","16 a 30 minutos","31 a 60 minutos","Mais de 60 minutos"]],
- ["Quantas horas de sono de verdade (não só na cama) você tem, em geral, por noite?",[
-  "Mais de 7 horas","6 a 7 horas","5 a 6 horas","Menos de 5 horas"]],
- ["Quantas vezes por semana seu sono foi realmente eficiente, com poucas interrupções?",[
-  "A maioria das noites","Bastante frequente","Às vezes","Raramente ou nunca"]],
- ["Com que frequência algo perturba seu sono (acordar de madrugada, ir ao banheiro, sentir frio/calor, dor, pesadelos)?",[
-  "Nenhuma vez nas últimas semanas","Menos de 1 vez por semana","1 a 2 vezes por semana","3 ou mais vezes por semana"]],
- ["Com que frequência você usa algum remédio (com ou sem receita) para conseguir dormir?",[
-  "Nenhuma vez nas últimas semanas","Menos de 1 vez por semana","1 a 2 vezes por semana","3 ou mais vezes por semana"]],
- ["Com que frequência você tem dificuldade de ficar acordado(a) durante atividades do dia (dirigir, comer, socializar) ou falta de entusiasmo para fazer as coisas?",[
-  "Nenhuma vez nas últimas semanas","Menos de 1 vez por semana","1 a 2 vezes por semana","3 ou mais vezes por semana"]]
-];
-
-/* ---- HIT-6 (Headache Impact Test) ---- */
-const HIT6_OPTS = ["Nunca","Raramente","Algumas vezes","Muito frequentemente","Sempre"];
-const HIT6_ITEMS = [
- "Quando você tem dor de cabeça, a intensidade da dor é forte?",
- "As dores de cabeça limitam sua capacidade de realizar atividades diárias habituais (trabalho, escola, casa, social)?",
- "Quando você tem dor de cabeça, você deseja se deitar?",
- "Nas últimas 4 semanas, você se sentiu cansado(a) demais para trabalhar ou fazer atividades diárias por causa da dor de cabeça?",
- "Nas últimas 4 semanas, você se sentiu enjoado(a) ou irritado(a) por causa da dor de cabeça?",
- "Nas últimas 4 semanas, as dores de cabeça limitaram sua capacidade de se concentrar no trabalho ou em atividades diárias?"
-];
-
-/* ---- FABQ-PA (subescala de atividade física, complementar à subescala de trabalho já existente) ---- */
-const FABQ_PA_ITEMS = [
- "Minha dor foi causada por atividade física.",
- "A atividade física agrava minha dor.",
- "A atividade física poderia prejudicar minha coluna.",
- "Eu não deveria fazer atividades físicas que agravem minha dor."
-];
-
-/* ---- COMI-Back (Core Outcome Measures Index) ---- */
-const COMI_MAX = [10,10,4,4,4,3,1];
-const COMI_SECTIONS = [
- ["Intensidade da dor nas costas na última semana (0 a 10)",[
-  "0 — Nenhuma dor","1","2","3","4","5 — Dor moderada","6","7","8","9","10 — A pior dor imaginável"]],
- ["Intensidade da dor na perna (se houver) na última semana (0 a 10)",[
-  "0 — Nenhuma dor","1","2","3","4","5 — Dor moderada","6","7","8","9","10 — A pior dor imaginável"]],
- ["Nas duas últimas semanas, quanto sua dor nas costas interferiu nas suas atividades diárias habituais?",[
-  "Nada","Um pouco","Moderadamente","Bastante","Extremamente"]],
- ["Como você avalia seu bem-estar geral relacionado ao seu problema de coluna, na última semana?",[
-  "Muito bom","Bom","Regular","Ruim","Muito ruim"]],
- ["Como você avalia sua qualidade de vida em geral, na última semana?",[
-  "Muito boa","Boa","Regular","Ruim","Muito ruim"]],
- ["Quantos dias você ficou afastado do trabalho ou de suas atividades habituais por causa da coluna, nos últimos 6 meses?",[
-  "Nenhum dia","1 a 7 dias","8 a 30 dias","Mais de 30 dias"]],
- ["Você mudou de emprego ou de tarefas de trabalho por causa da sua coluna?",[
-  "Não","Sim"]]
-];
-
-/* ---- HADS (Hospital Anxiety and Depression Scale) ---- */
-const HADS_OPTS = ["Nunca","Raramente","Às vezes","Frequentemente"];
-const HADS_ITEMS = [
- "Eu me sinto tenso(a) ou contraído(a).",
- "Sinto uma espécie de medo, como se algo ruim fosse acontecer.",
- "Fico preocupado(a) com pensamentos ruins.",
- "Consigo ficar sentado(a) tranquilamente e me sentir relaxado(a).",
- "Sinto uma espécie de aperto ou desconforto no estômago.",
- "Sinto-me inquieto(a), como se não pudesse ficar parado(a).",
- "Tenho sensações repentinas de pânico.",
- "Ainda sinto prazer nas coisas que eu costumava gostar de fazer.",
- "Sou capaz de rir e ver o lado divertido das coisas.",
- "Sinto-me alegre(a).",
- "Sinto-me mais lento(a), como se fizesse tudo mais devagar que antes.",
- "Perdi o interesse em cuidar da minha aparência.",
- "Aguardo as coisas com prazer e entusiasmo.",
- "Consigo apreciar um bom livro, programa de rádio ou TV."
-];
-const HADS_REVERSE = [3,7,8,9,12,13];
-
-/* ---- CSI (Central Sensitization Inventory) — Parte A, 25 itens ---- */
-const CSI_OPTS = ["Nunca","Raramente","Às vezes","Frequentemente","Sempre"];
-const CSI_ITEMS = [
- "Sinto dor no corpo.",
- "Sinto-me cansado(a) com facilidade.",
- "Não durmo bem.",
- "Sinto dor de cabeça tensional.",
- "Sinto dor ou queimação ao urinar.",
- "Não me sinto descansado(a) pela manhã, mesmo após dormir muitas horas.",
- "Sinto dores musculares generalizadas pelo corpo.",
- "Tenho cólicas ou dor abdominal.",
- "Sinto-me deprimido(a).",
- "Tenho pouca energia.",
- "Sinto tensão nos músculos do pescoço e ombros.",
- "Sinto dor na mandíbula.",
- "Alguns cheiros, como perfumes, me deixam tonto(a) ou enjoado(a).",
- "Preciso urinar frequentemente.",
- "Minhas pernas ficam inquietas quando estou tentando dormir.",
- "Tenho dificuldade de concentração.",
- "Já tive uma lesão do tipo \"chicote\" (movimento brusco de pescoço, como em acidente de carro).",
- "Minha pele fica facilmente irritada quando algo toca nela.",
- "Tenho crises de pânico.",
- "Sinto ansiedade.",
- "Bebidas alcoólicas me deixam muito mal.",
- "Quando criança, sofri algum tipo de abuso físico ou emocional.",
- "Sinto dor nas articulações.",
- "Sinto que algo não está bem no meu corpo, sem saber exatamente o quê.",
- "Sofro de dor crônica em alguma parte do corpo."
-];
-
-/* ---- Örebro Musculoskeletal Pain Screening Questionnaire — versão curta (10 itens, 0 a 10) ---- */
-const OREBRO_SCALE_RISK = ["0 — Nenhuma chance","1","2","3","4","5 — Chance moderada","6","7","8","9","10 — Certeza absoluta"];
-const OREBRO_SCALE_PAIN = ["0 — Nenhuma dor","1","2","3","4","5 — Dor moderada","6","7","8","9","10 — A pior dor possível"];
-const OREBRO_SCALE_INTERFERE = ["0 — Nada","1","2","3","4","5 — Moderadamente","6","7","8","9","10 — Totalmente"];
-const OREBRO_SCALE_MOOD = ["0 — Nem um pouco","1","2","3","4","5 — Moderadamente","6","7","8","9","10 — Extremamente"];
-const OREBRO_SECTIONS = [
- ["Em quantos dos últimos 7 dias você conseguiu realizar suas atividades normais (trabalho, casa, lazer), mesmo com dor?",[
-  "0 — Nenhum dia","1","2","3","4","5 — Metade dos dias","6","7 — Todos os dias"]],
- ["Qual foi a intensidade média da sua dor na última semana?",OREBRO_SCALE_PAIN],
- ["Qual foi a intensidade da sua dor no pior momento do último mês?",OREBRO_SCALE_PAIN],
- ["Quantas vezes, nos últimos 3 meses, você teve episódios de dor como o atual?",[
-  "Nenhuma vez, é a primeira vez","Uma vez antes","2 a 5 vezes","Mais de 5 vezes","A dor está sempre presente"]],
- ["Na sua opinião, qual é a chance de sua dor atual se tornar persistente (permanente)?",OREBRO_SCALE_RISK],
- ["Na sua opinião, qual é a chance de você conseguir voltar ao seu trabalho normal dentro dos próximos meses?",OREBRO_SCALE_RISK],
- ["O quanto a dor interferiu no seu trabalho ou nas suas atividades diárias na última semana?",OREBRO_SCALE_INTERFERE],
- ["O quanto você se sentiu triste ou deprimido(a) por causa da dor na última semana?",OREBRO_SCALE_MOOD],
- ["O quanto a tensão ou a ansiedade te afetou na última semana?",OREBRO_SCALE_MOOD],
- ["O quanto você acha que deveria evitar suas atividades normais (trabalho, esforço físico) por medo de piorar a dor ou se machucar?",OREBRO_SCALE_INTERFERE]
-];
-
-/* ---- ESS (Epworth Sleepiness Scale) ---- */
-const ESS_OPTS = ["0 — Nenhuma chance de cochilar","1 — Pequena chance de cochilar","2 — Chance moderada de cochilar","3 — Alta chance de cochilar"];
-const ESS_ITEMS = [
- "Sentado(a) e lendo",
- "Assistindo TV",
- "Sentado(a), inativo(a), em um lugar público (ex.: teatro, reunião, palestra)",
- "Como passageiro(a) de carro, andando por 1 hora sem parar",
- "Deitado(a) para descansar à tarde, quando as circunstâncias permitem",
- "Sentado(a) e conversando com alguém",
- "Sentado(a) calmamente depois de um almoço sem álcool",
- "No carro, parado(a) por alguns minutos no trânsito"
-];
-
-/* ---- Escala de Fadiga de Chalder (11 itens: 7 física + 4 mental) ---- */
-const CHALDER_OPTS = ["Menos que o normal","Igual ao normal","Mais que o normal","Muito mais que o normal"];
-const CHALDER_ITEMS = [
- "Você tem tido problemas de cansaço?",
- "Você precisa descansar mais?",
- "Você se sente sonolento(a) ou com vontade de dormir?",
- "Você tem dificuldade para começar as coisas?",
- "Você está com pouca força ou energia?",
- "Você se sente fraco(a)?",
- "Você tem dificuldade para terminar coisas que começou, por falta de energia?",
- "Você tem dificuldade de concentração?",
- "Você tem dificuldade para encontrar a palavra certa ao falar?",
- "Como está sua memória, no geral?",
- "Você comete erros bobos com mais frequência que o normal?"
-];
-
-/* ---- SF-36 (Medical Outcomes Study 36-Item Short Form Health Survey) ---- */
-/* Estrutura em 8 domínios. Em cada item, as opções foram ordenadas de pior (índice 0)
-   para melhor (índice mais alto), para permitir normalização direta de 0 a 100. */
-const SF36_OPTS_3 = ["Sim, dificulta muito","Sim, dificulta um pouco","Não, não dificulta de modo algum"];
-const SF36_OPTS_SIMNAO = ["Sim","Não"];
-const SF36_OPTS_FREQ6 = ["Nunca","Uma pequena parte do tempo","Alguma parte do tempo","Uma boa parte do tempo","A maior parte do tempo","Todo o tempo"];
-const SF36_OPTS_FREQ6_INV = ["Todo o tempo","A maior parte do tempo","Uma boa parte do tempo","Alguma parte do tempo","Uma pequena parte do tempo","Nunca"];
-const SF36_OPTS_INTERF5 = ["De forma muito intensa","Bastante","Moderadamente","Ligeiramente","De forma nenhuma"];
-const SF36_OPTS_FREQ5_INV = ["Todo o tempo","A maior parte do tempo","Alguma parte do tempo","Uma pequena parte do tempo","Nenhuma parte do tempo"];
-const SF36_OPTS_DOR = ["Muito grave","Grave","Moderada","Leve","Muito leve","Nenhuma"];
-const SF36_OPTS_DOR_INTERF = ["Extremamente","Bastante","Moderadamente","Um pouco","De maneira alguma"];
-const SF36_OPTS_SAUDE5 = ["Muito ruim","Ruim","Boa","Muito boa","Excelente"];
-const SF36_OPTS_COMPARA = ["Muito pior agora do que há um ano","Um pouco pior agora do que há um ano","Quase a mesma de um ano atrás","Um pouco melhor agora do que há um ano","Muito melhor agora do que há um ano"];
-const SF36_OPTS_VERDFALSO_NEG = ["Definitivamente verdadeiro","A maioria das vezes verdadeiro","Não sei","A maioria das vezes falso","Definitivamente falso"];
-const SF36_OPTS_VERDFALSO_POS = ["Definitivamente falso","A maioria das vezes falso","Não sei","A maioria das vezes verdadeiro","Definitivamente verdadeiro"];
-
-const SF36_SECTIONS = [
- // Domínio 1 — Capacidade Funcional (10 itens, índices 0-9)
- ["Atividades rigorosas, que exigem muito esforço, como correr, levantar objetos pesados, praticar esportes árduos",SF36_OPTS_3],
- ["Atividades moderadas, como mover uma mesa, passar aspirador de pó, jogar bola",SF36_OPTS_3],
- ["Levantar ou carregar sacolas de compras",SF36_OPTS_3],
- ["Subir vários lances de escada",SF36_OPTS_3],
- ["Subir um lance de escada",SF36_OPTS_3],
- ["Curvar-se, ajoelhar-se ou dobrar-se",SF36_OPTS_3],
- ["Andar mais de 1 quilômetro",SF36_OPTS_3],
- ["Andar vários quarteirões",SF36_OPTS_3],
- ["Andar um quarteirão",SF36_OPTS_3],
- ["Tomar banho ou vestir-se sozinho(a)",SF36_OPTS_3],
- // Domínio 2 — Limitação por Aspectos Físicos (4 itens, índices 10-13)
- ["Nas últimas 4 semanas, você diminuiu o tempo dedicado ao trabalho ou a outras atividades por causa da sua saúde física?",SF36_OPTS_SIMNAO],
- ["Nas últimas 4 semanas, você realizou menos tarefas do que gostaria por causa da sua saúde física?",SF36_OPTS_SIMNAO],
- ["Nas últimas 4 semanas, você esteve limitado(a) no tipo de trabalho ou outras atividades por causa da sua saúde física?",SF36_OPTS_SIMNAO],
- ["Nas últimas 4 semanas, você teve dificuldade de realizar o trabalho ou outras atividades (precisou de um esforço extra) por causa da sua saúde física?",SF36_OPTS_SIMNAO],
- // Domínio 3 — Limitação por Aspectos Emocionais (3 itens, índices 14-16)
- ["Nas últimas 4 semanas, você diminuiu o tempo dedicado ao trabalho ou a outras atividades por algum problema emocional?",SF36_OPTS_SIMNAO],
- ["Nas últimas 4 semanas, você realizou menos tarefas do que gostaria por algum problema emocional?",SF36_OPTS_SIMNAO],
- ["Nas últimas 4 semanas, você fez o trabalho ou outras atividades com menos cuidado do que de costume, por algum problema emocional?",SF36_OPTS_SIMNAO],
- // Domínio 4 — Vitalidade (4 itens, índices 17-20)
- ["Nas últimas 4 semanas, quanto tempo você se sentiu cheio(a) de vigor, de vontade, de força?",SF36_OPTS_FREQ6],
- ["Nas últimas 4 semanas, quanto tempo você teve muita energia?",SF36_OPTS_FREQ6],
- ["Nas últimas 4 semanas, quanto tempo você se sentiu descansado(a) e disposto(a)?",SF36_OPTS_FREQ6],
- ["Nas últimas 4 semanas, quanto tempo você se sentiu animado(a) e com disposição para as atividades do dia?",SF36_OPTS_FREQ6],
- // Domínio 5 — Aspectos Sociais (2 itens, índices 21-22)
- ["Durante as últimas 4 semanas, o quanto sua saúde física ou emocional interferiu nas suas atividades sociais (visitar amigos, parentes, etc.)?",SF36_OPTS_INTERF5],
- ["Durante as últimas 4 semanas, quanto tempo sua saúde física ou emocional interferiu em suas atividades sociais?",SF36_OPTS_FREQ5_INV],
- // Domínio 6 — Dor (2 itens, índices 23-24)
- ["Quanta dor no corpo você sentiu nas últimas 4 semanas?",SF36_OPTS_DOR],
- ["Nas últimas 4 semanas, quanto a dor interferiu no seu trabalho normal (dentro e fora de casa)?",SF36_OPTS_DOR_INTERF],
- // Domínio 7 — Saúde Mental (5 itens, índices 25-29)
- ["Quanto tempo, nas últimas 4 semanas, você se sentiu nervoso(a)?",SF36_OPTS_FREQ6_INV],
- ["Quanto tempo, nas últimas 4 semanas, você se sentiu tão deprimido(a) que nada conseguia animá-lo(a)?",SF36_OPTS_FREQ6_INV],
- ["Quanto tempo, nas últimas 4 semanas, você se sentiu calmo(a) ou tranquilo(a)?",SF36_OPTS_FREQ6],
- ["Quanto tempo, nas últimas 4 semanas, você se sentiu deprimido(a)?",SF36_OPTS_FREQ6_INV],
- ["Quanto tempo, nas últimas 4 semanas, você se sentiu feliz?",SF36_OPTS_FREQ6],
- // Domínio 8 — Estado Geral de Saúde (5 itens, índices 30-34)
- ["Em geral, você diria que sua saúde é:",SF36_OPTS_SAUDE5],
- ["Comparado a um ano atrás, como você avalia sua saúde em geral, agora?",SF36_OPTS_COMPARA],
- ["\"Eu costumo adoecer um pouco mais facilmente do que as outras pessoas\"",SF36_OPTS_VERDFALSO_NEG],
- ["\"Eu sou tão saudável quanto qualquer pessoa que eu conheço\"",SF36_OPTS_VERDFALSO_POS],
- ["\"Eu acho que a minha saúde vai piorar\"",SF36_OPTS_VERDFALSO_NEG]
-];
-
-/* ---- MASQ (Multiple Ability Self-Report Questionnaire) — queixas cognitivas em 6 domínios ---- */
-const MASQ_OPTS = ["Nunca","Raramente","Às vezes","Frequentemente","Muito frequentemente"];
-const MASQ_ITEMS = [
- // Domínio 1 — Linguagem (índices 0-5)
- "Tenho dificuldade para encontrar a palavra certa quando estou falando.",
- "Tenho dificuldade para entender o que as pessoas estão dizendo.",
- "Tenho dificuldade para acompanhar uma conversa quando várias pessoas falam ao mesmo tempo.",
- "Tenho dificuldade para entender o que estou lendo.",
- "Confundo palavras parecidas quando falo.",
- "Tenho dificuldade para escrever o que estou pensando.",
- // Domínio 2 — Visuoespacial (índices 6-11)
- "Fico perdido(a) em lugares que já conheço.",
- "Tenho dificuldade para julgar distâncias (ex.: ao estacionar o carro).",
- "Tenho dificuldade para montar ou seguir um mapa.",
- "Esbarro em objetos ou pessoas com mais frequência que o normal.",
- "Tenho dificuldade para organizar objetos no espaço (ex.: arrumar uma mala, um armário).",
- "Tenho dificuldade de orientação, mesmo em lugares familiares.",
- // Domínio 3 — Memória Verbal (índices 12-17)
- "Esqueço nomes de pessoas que acabei de conhecer.",
- "Esqueço coisas que as pessoas me contaram recentemente.",
- "Esqueço compromissos ou combinados.",
- "Preciso perguntar a mesma coisa mais de uma vez porque esqueci a resposta.",
- "Esqueço o que ia dizer no meio de uma frase.",
- "Tenho dificuldade para lembrar de listas (ex.: lista de compras) sem anotar.",
- // Domínio 4 — Memória Visual (índices 18-23)
- "Esqueço onde deixei meus objetos pessoais (ex.: chaves, óculos, celular).",
- "Esqueço o rosto de pessoas que já conheci.",
- "Tenho dificuldade para lembrar onde estacionei o carro.",
- "Esqueço onde guardei coisas em casa.",
- "Tenho dificuldade para reconhecer lugares que já visitei antes.",
- "Esqueço detalhes visuais de coisas que vi recentemente.",
- // Domínio 5 — Atenção/Concentração (índices 24-30)
- "Tenho dificuldade para me concentrar em uma tarefa por muito tempo.",
- "Me distraio com facilidade.",
- "Tenho dificuldade para fazer mais de uma coisa ao mesmo tempo.",
- "Perco o fio da meada no meio de uma tarefa.",
- "Cometo erros bobos por falta de atenção.",
- "Tenho dificuldade para me concentrar quando há barulho ao redor.",
- "Preciso reler a mesma coisa várias vezes para entender.",
- // Domínio 6 — Motora/Práxis (índices 31-37)
- "Deixo cair objetos com mais frequência que o normal.",
- "Tenho dificuldade para fazer tarefas que exigem coordenação fina (ex.: abotoar roupa, costurar).",
- "Fico mais desajeitado(a) do que era antes.",
- "Tenho dificuldade para escrever à mão de forma legível.",
- "Tenho dificuldade para realizar sequências de movimentos (ex.: dançar, seguir uma coreografia).",
- "Derrubo ou esbarro em coisas sem querer.",
- "Sinto que meus movimentos ficaram mais lentos ou menos precisos."
-];
-
-// Explicações extras para perguntas mais técnicas/abstratas, mostradas em texto simples
-// embaixo da pergunta. Indexado por [chave do questionário][índice da pergunta, 0-based].
+/* Formulários ativos e schemas históricos sem textos dos itens bloqueados.
+   LEGACY_SCHEMA preserva comprimento/índices, não uma versão para aplicação.
+   Nenhum registro persistido é alterado ou recalculado. */
+const LEGACY_SCHEMA = {
+ "odi": {
+  "type": "sections",
+  "options": [
+   6,
+   6,
+   6,
+   6,
+   6,
+   6,
+   6,
+   6,
+   6,
+   6
+  ]
+ },
+ "ndi": {
+  "type": "sections",
+  "options": [
+   6,
+   6,
+   6,
+   6,
+   6,
+   6,
+   6,
+   6,
+   6,
+   6
+  ]
+ },
+ "tsk13": {
+  "type": "likert",
+  "options": [
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4
+  ]
+ },
+ "quickdash": {
+  "type": "likert",
+  "options": [
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5
+  ]
+ },
+ "whodas": {
+  "type": "likert",
+  "options": [
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5
+  ]
+ },
+ "dn4": {
+  "type": "yesno",
+  "options": [
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2
+  ]
+ },
+ "fabq": {
+  "type": "likert",
+  "options": [
+   7,
+   7,
+   7,
+   7,
+   7,
+   7,
+   7
+  ]
+ },
+ "pcs": {
+  "type": "likert",
+  "options": [
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5
+  ]
+ },
+ "rmdq": {
+  "type": "yesno",
+  "options": [
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2
+  ]
+ },
+ "mjoa": {
+  "type": "sections",
+  "options": [
+   6,
+   8,
+   4,
+   4
+  ]
+ },
+ "wiq": {
+  "type": "likert",
+  "options": [
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5
+  ]
+ },
+ "lefs": {
+  "type": "likert",
+  "options": [
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5
+  ]
+ },
+ "sfi": {
+  "type": "sections",
+  "options": [
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5
+  ]
+ },
+ "ict": {
+  "type": "sections",
+  "options": [
+   3,
+   11,
+   5,
+   5,
+   6,
+   6,
+   5,
+   3,
+   5,
+   5,
+   5
+  ]
+ },
+ "fiqr": {
+  "type": "sections",
+  "options": [
+   11,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11
+  ]
+ },
+ "wpi": {
+  "type": "yesno",
+  "options": [
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2
+  ]
+ },
+ "sss": {
+  "type": "sections",
+  "options": [
+   4,
+   4,
+   4,
+   4
+  ]
+ },
+ "hoos": {
+  "type": "likert",
+  "options": [
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5
+  ]
+ },
+ "koos": {
+  "type": "likert",
+  "options": [
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5
+  ]
+ },
+ "fss": {
+  "type": "likert",
+  "options": [
+   7,
+   7,
+   7,
+   7,
+   7,
+   7,
+   7,
+   7,
+   7
+  ]
+ },
+ "psqi": {
+  "type": "sections",
+  "options": [
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4
+  ]
+ },
+ "hit6": {
+  "type": "likert",
+  "options": [
+   5,
+   5,
+   5,
+   5,
+   5,
+   5
+  ]
+ },
+ "fabqpa": {
+  "type": "likert",
+  "options": [
+   7,
+   7,
+   7,
+   7
+  ]
+ },
+ "comi": {
+  "type": "sections",
+  "options": [
+   11,
+   11,
+   5,
+   5,
+   5,
+   4,
+   2
+  ]
+ },
+ "hads": {
+  "type": "likert",
+  "options": [
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4
+  ]
+ },
+ "csi": {
+  "type": "likert",
+  "options": [
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5
+  ]
+ },
+ "orebro": {
+  "type": "sections",
+  "options": [
+   8,
+   11,
+   11,
+   5,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11
+  ]
+ },
+ "ess": {
+  "type": "likert",
+  "options": [
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4
+  ]
+ },
+ "chalder": {
+  "type": "likert",
+  "options": [
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4,
+   4
+  ]
+ },
+ "sf36": {
+  "type": "sections",
+  "options": [
+   3,
+   3,
+   3,
+   3,
+   3,
+   3,
+   3,
+   3,
+   3,
+   3,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   2,
+   6,
+   6,
+   6,
+   6,
+   5,
+   5,
+   6,
+   5,
+   6,
+   6,
+   6,
+   6,
+   6,
+   5,
+   5,
+   5,
+   5,
+   5
+  ]
+ },
+ "masq": {
+  "type": "likert",
+  "options": [
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5
+  ]
+ }
+};
+const ICT_DISEASE_CATEGORIES = Object.freeze(['Nenhuma','1 doença','2 doenças','3 doenças','4 doenças','5 ou mais doenças']);
 const ITEM_HELP = {
- eva: {
-  0: 'Pense em como está sua dor agora mesmo, neste momento, sem fazer nenhum esforço.',
-  1: 'Pense no momento em que a dor costuma ficar mais forte no seu dia (para muita gente, é de manhã ao levantar, ou à noite).',
-  2: 'Pense no momento em que a dor costuma ficar mais fraca, ou quase não aparece.',
-  3: 'Imagine fazendo a atividade mais pesada do seu trabalho (levantar peso, ficar em pé muito tempo, repetir o mesmo movimento) e dê a nota de dor que você sentiria nessa hora.'
- },
- ict: {
-  0: 'Pense no que você mais faz no seu trabalho no dia a dia.',
-  8: 'Isso é sobre se sentir bem ao fazer as coisas que você gosta — não é sobre o problema de saúde.',
-  9: 'Sentir-se "alerta" é estar atento, desperto, sem sonolência ou lentidão mental.',
-  10: 'Isso é sobre o seu sentimento em relação ao futuro em geral, não sobre o problema de saúde específico.'
- },
- mjoa: {
-  3: 'Essa pergunta é sobre o controle da urina (bexiga) — é uma pergunta padrão de avaliação neurológica, não precisa se sentir desconfortável em responder.'
- },
- tsk13: {
-  4: 'Esta frase está no sentido contrário das outras — leia com calma antes de responder.'
- },
- fabq: {
-  2: 'Isso pergunta sobre sua opinião/crença, não sobre o que você sente fisicamente.'
- },
- fabqpa: {
-  0: 'Isso pergunta sobre sua opinião/crença, não sobre o que você sente fisicamente.'
- },
- pcs: {
-  0: 'Isso é sobre os pensamentos que passam pela sua cabeça quando dói, não sobre a dor em si.'
- },
- csi: {
-  16: 'Uma lesão do tipo "chicote" é quando o pescoço é jogado bruscamente pra frente e pra trás, como costuma acontecer em batidas de carro por trás.'
- },
- orebro: {
-  0: 'Conte quantos dias, dos últimos 7, você conseguiu fazer suas atividades normais — mesmo sentindo dor.',
-  3: 'Pense em quantas vezes esse tipo de dor já apareceu antes, nos últimos 3 meses.'
+ eva:{
+  0:'Pense em como está sua dor agora mesmo, neste momento, sem fazer nenhum esforço.',
+  1:'Pense no momento em que a dor costuma ficar mais forte no seu dia (para muita gente, é de manhã ao levantar, ou à noite).',
+  2:'Pense no momento em que a dor costuma ficar mais fraca, ou quase não aparece.',
+  3:'Imagine fazendo a atividade mais pesada do seu trabalho (levantar peso, ficar em pé muito tempo, repetir o mesmo movimento) e dê a nota de dor que você sentiria nessa hora.'
  }
 };
 
-const QUESTIONNAIRES = {
- odi: { title:"Índice de Incapacidade de Oswestry (ODI)", short:"ODI · coluna lombar", about:"Sobre a parte de baixo das suas costas (lombar).", type:"sections", data:ODI_SECTIONS,
-  intro:"Estas perguntas são sobre a parte de baixo das suas costas (a coluna lombar) e como a dor atrapalha o seu dia a dia. Escolha a frase que mais parece com a sua situação hoje — não existe resposta certa ou errada.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*5))*100:0, raw:sum, n:a.length}; } },
- ndi: { title:"Índice de Incapacidade Cervical (NDI)", short:"NDI · coluna cervical", about:"Sobre o seu pescoço.", type:"sections", data:NDI_SECTIONS,
-  intro:"Estas perguntas são sobre o seu pescoço e como a dor atrapalha o seu dia a dia. Escolha a frase que mais parece com a sua situação hoje.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*5))*100:0, raw:sum, n:a.length}; } },
- tsk13: { title:"Escala Tampa de Cinesiofobia (TSK-13)", short:"TSK-13 · medo do movimento", about:"Sobre o medo de se movimentar.", type:"likert", items:TSK13_ITEMS, opts:TSK13_OPTS,
-  intro:"Estas perguntas não são sobre a dor em si — são sobre o que passa pela sua cabeça quando pensa em se movimentar ou fazer esforço. Responda com o que faz mais sentido pra você, sem pensar demais.",
-  score(answers){ let sum=0,n=0; answers.forEach((v,i)=>{ if(isAnswered(v)){ n++; const val=v+1; sum += TSK13_REVERSE.includes(i)?(5-val):val; }}); return {pct:n?((sum-n)/(n*3))*100:0, raw:sum, n}; } },
- quickdash: { title:"QuickDASH (função do membro superior)", short:"QuickDASH · membro superior", about:"Sobre o seu braço, ombro ou mão.", type:"likert",
-  items:QUICKDASH_ITEMS.map(i=>i[0]), optsPerItem:QUICKDASH_ITEMS.map(i=>i[1]),
-  intro:"Estas perguntas são sobre dificuldades para usar o braço, o ombro ou a mão em tarefas simples do dia a dia.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); if(!a.length) return {pct:0,raw:0,n:0}; const sum=a.reduce((s,v)=>s+(v+1),0); const mean=sum/a.length; return {pct:((mean-1)/4)*100, raw:sum, n:a.length}; } },
- whodas: { title:"WHODAS 2.0 (12 itens) — funcionalidade geral", short:"WHODAS 2.0 · funcionalidade global", about:"Sobre suas atividades do dia a dia, de forma geral.", type:"likert", items:WHODAS_ITEMS, opts:WHODAS_OPTS,
-  intro:"Estas perguntas são sobre o quanto seu problema de saúde dificulta atividades do seu dia a dia, de forma mais geral.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
- eva: { title:"Escala Visual Analógica de Dor (EVA)", short:"EVA · dor em 4 condições", about:"Sobre a intensidade da sua dor.", type:"sliders",
-  items:["Agora, em repouso (sem fazer esforço)","No pior momento de dor do seu dia","No melhor momento de dor do seu dia","Fazendo um esforço parecido com o do seu trabalho (ex.: levantar peso, ficar em pé bastante tempo, movimentos repetidos)"],
-  intro:"Agora vamos medir sua dor numa régua de 0 a 10, em momentos diferentes. 0 é sem dor nenhuma, 10 é a pior dor que você já sentiu na vida.",
-  score(answers){ return {answers}; } },
- dn4: { title:"DN4 — versão entrevista (dor neuropática)", short:"DN4 · qualidade da dor", about:"Sobre como é a sensação da sua dor.", type:"yesno", items:DN4_ITEMS,
-  intro:"Estas perguntas são sobre como é a sensação da sua dor (se ela parece queimação, choque, formigamento, e coisas do tipo). Responda Sim ou Não pro que você realmente sente.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:0, raw:sum, n:a.length}; } },
- fabq: { title:"FABQ — subescala trabalho", short:"FABQ-trabalho · medo-evitação", about:"Sobre sua opinião sobre trabalho e dor.", type:"likert", items:FABQ_TRABALHO_ITEMS, opts:FABQ_OPTS,
-  intro:"Estas perguntas são sobre a sua opinião a respeito do seu trabalho e da sua dor — não é sobre o que você sente no corpo, é sobre o que você pensa e acredita.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*6))*100:0, raw:sum, n:a.length}; } },
- pcs: { title:"PCS (Pain Catastrophizing Scale)", short:"PCS · catastrofização da dor", about:"Sobre os pensamentos que você tem quando sente dor.", type:"likert", items:PCS_ITEMS, opts:PCS_OPTS,
-  intro:"Estas perguntas são sobre os pensamentos que passam pela sua cabeça quando você sente dor. Não existe resposta certa ou errada, responda com o que é mais parecido com você.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
- rmdq: { title:"Roland-Morris (RMDQ)", short:"RMDQ · incapacidade lombar leve-moderada", about:"Sobre a parte de baixo das suas costas (lombar), em um jeito mais simples.", type:"yesno", items:RMDQ_ITEMS,
-  intro:"Estas são frases sobre o seu dia a dia por causa da dor na coluna. Marque Sim se a frase descreve como você está hoje, ou Não se ela não descreve.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/a.length)*100:0, raw:sum, n:a.length}; } },
- mjoa: { title:"mJOA (mielopatia cervical)", short:"mJOA · função motora, sensibilidade e esfíncter", about:"Sobre força, sensibilidade e controle da urina, relacionados ao seu pescoço.", type:"sections", data:MJOA_SECTIONS,
-  intro:"Estas perguntas são sobre força, sensibilidade e controle da urina — coisas que podem ser afetadas quando há compressão na coluna do pescoço. Escolha a frase que mais parece com a sua situação hoje.",
-  score(answers){
-   let raw=0, maxPossible=0, n=0;
-   answers.forEach((v,i)=>{ if(isAnswered(v)){ raw+=v; maxPossible+=MJOA_MAX[i]; n++; } });
-   const pct = maxPossible ? 100-((raw/maxPossible)*100) : 0;
-   return {pct, raw, n, maxPossible};
-  } },
- psfs: { title:"PSFS (Escala Funcional Específica do Paciente)", short:"PSFS · atividades escolhidas pelo próprio paciente", about:"Sobre atividades que você mesmo escolhe.", type:"psfs", items:PSFS_STEPS,
-  intro:"Agora pense em até 3 atividades do seu dia a dia que ficaram difíceis por causa do problema. Para cada uma, dê uma nota de 0 a 10: 0 é 'não consigo fazer de jeito nenhum', 10 é 'consigo fazer como fazia antes'.",
-  score(answers){ return {activities: answers}; } },
- wiq: { title:"WIQ (Walking Impairment Questionnaire)", short:"WIQ · caminhada e claudicação", about:"Sobre sua capacidade de caminhar e subir escadas.", type:"likert", items:WIQ_ITEMS, opts:WIQ_ABILITY_OPTS,
-  intro:"Estas perguntas são sobre sua capacidade de caminhar e subir escadas — distâncias e velocidades diferentes. Escolha a opção que mais parece com o que você consegue fazer hoje.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); const pct=a.length?100-((sum/(a.length*4))*100):0; return {pct, raw:sum, n:a.length}; } },
- lefs: { title:"LEFS (Lower Extremity Functional Scale)", short:"LEFS · função de quadril, joelho e marcha", about:"Sobre suas pernas (quadril, joelho, marcha).", type:"likert", items:LEFS_ITEMS, opts:LEFS_OPTS,
-  intro:"Estas perguntas são sobre atividades do dia a dia que dependem das suas pernas — agachar, subir escada, ficar em pé, andar, entre outras. Escolha a opção que mais parece com o que você consegue fazer hoje.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); const pct=a.length?100-((sum/(a.length*4))*100):0; return {pct, raw:sum, n:a.length}; } },
- sfi: { title:"SFI-10-Br (Spine Functional Index)", short:"SFI-10 · coluna como unidade única", about:"Sobre a sua coluna inteira (pescoço, meio e lombar juntos).", type:"sections", data:SFI_SECTIONS,
-  intro:"Estas perguntas são sobre a sua coluna como um todo — pescoço, meio das costas e parte de baixo das costas juntos, não separados. Escolha a frase que mais parece com a sua situação hoje.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
- nmq: { title:"Questionário Nórdico de Sintomas Osteomusculares (QNSO/NMQ)", short:"NMQ · mapa corporal de sintomas", about:"Sobre dor em diferentes partes do corpo.", type:"nmq", items:NMQ_REGIONS,
-  intro:"Estas perguntas são sobre dor, desconforto ou dormência em diferentes partes do corpo — nos últimos 12 meses e nos últimos 7 dias.",
-  score(answers){
-   let y12count=0, y7count=0, impedeCount=0, n=0; const regions=[];
-   answers.forEach((a,i)=>{
-    if(a && a.y12!==null && a.y12!==undefined){
-     n++;
-     if(a.y12===1){ y12count++; regions.push(NMQ_REGIONS[i]); if(a.impede===1) impedeCount++; if(a.y7===1) y7count++; }
-    }
-   });
-   return {y12count, y7count, impedeCount, n, regions};
-  } },
- ict: { title:"ICT (Índice de Capacidade para o Trabalho / WAI)", short:"ICT-WAI · capacidade e prognóstico laboral", about:"Sobre sua capacidade de trabalhar.", type:"sections", data:ICT_SECTIONS,
-  intro:"Estas perguntas são sobre sua capacidade de trabalhar hoje, comparada a outros momentos da sua vida, e sobre doenças e afastamentos recentes.",
-  score(answers){
-   const v = answers;
-   const n = v.filter(x=>x!==null&&x!==undefined&&x!=='NA').length;
-   if(n < 11) return {raw:null, n, incomplete:true};
-   const demandType = v[0];
-   const item1 = v[1];
-   const physPts = v[2]+1, mentPts = v[3]+1;
-   let item2;
-   if(demandType===0) item2 = physPts*0.5 + mentPts*1.5;
-   else if(demandType===1) item2 = physPts*1.5 + mentPts*0.5;
-   else item2 = physPts + mentPts;
-   const diseaseTable = [7,5,3,1];
-   const item3 = diseaseTable[v[4]];
-   const item4 = 6 - v[5];
-   const item5 = 5 - v[6];
-   const prognosisTable = [1,4,7];
-   const item6 = prognosisTable[v[7]];
-   const mrSum = v[8] + v[9] + v[10];
-   const item7 = mrSum<=3?1:(mrSum<=6?2:(mrSum<=9?3:4));
-   const total = Math.round(item1 + item2 + item3 + item4 + item5 + item6 + item7);
-   return {raw:total, n, incomplete:false};
-  } },
- fiqr: { title:"FIQR (Fibromyalgia Impact Questionnaire — Revised)", short:"FIQR · impacto global da fibromialgia", about:"Sobre o impacto da fibromialgia na sua vida.", type:"sections", data:FIQR_ITEMS,
-  intro:"Estas perguntas são sobre como a fibromialgia afeta suas atividades, seu bem-estar geral e seus sintomas. Para cada uma, escolha o número de 0 a 10 que melhor descreve você nos últimos 7 dias.",
-  score(answers){
-   const func = answers.slice(0,9).filter(v=>isAnswered(v));
-   const imp = answers.slice(9,11).filter(v=>isAnswered(v));
-   const sym = answers.slice(11,21).filter(v=>isAnswered(v));
-   const funcSum = func.reduce((s,v)=>s+v,0), impSum = imp.reduce((s,v)=>s+v,0), symSum = sym.reduce((s,v)=>s+v,0);
-   const total = (funcSum/3) + impSum + (symSum/2);
-   const n = func.length+imp.length+sym.length;
-   return {pct: total, raw: total, n};
-  } },
- wpi: { title:"WPI (Widespread Pain Index — critério de fibromialgia)", short:"WPI · mapa corporal de dor (ACR)", about:"Sobre em quais partes do corpo você sente dor.", type:"yesno", items:WPI_REGIONS,
-  intro:"Nesta última semana, você teve dor em cada uma destas regiões do corpo? Responda Sim ou Não para cada uma. Esse instrumento, junto com o próximo (SSS), compõe o critério diagnóstico oficial de fibromialgia (ACR 2010/2016).",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {raw:sum, n:a.length}; } },
- sss: { title:"SSS (Symptom Severity Scale — companheira do WPI)", short:"SSS · gravidade dos sintomas (ACR)", about:"Sobre a gravidade de alguns sintomas (fadiga, sono, memória).", type:"sections", data:SSS_SECTIONS,
-  intro:"Estas perguntas são sobre a gravidade de alguns sintomas nos últimos dias/meses. Junto com o WPI (mapa de dor), formam o critério diagnóstico oficial de fibromialgia.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {raw:sum, n:a.length}; } },
- hoos: { title:"HOOS (Hip disability and Osteoarthritis Outcome Score)", short:"HOOS · quadril", about:"Sobre o seu quadril.", type:"likert", items:HOOS_ITEMS, opts:JOINT_DIFF_OPTS,
-  intro:"Estas perguntas são sobre dor, rigidez e dificuldade para usar o seu quadril em atividades do dia a dia.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
- koos: { title:"KOOS (Knee injury and Osteoarthritis Outcome Score)", short:"KOOS · joelho", about:"Sobre o seu joelho.", type:"likert", items:KOOS_ITEMS, opts:JOINT_DIFF_OPTS,
-  intro:"Estas perguntas são sobre dor, rigidez e dificuldade para usar o seu joelho em atividades do dia a dia.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
- fss: { title:"FSS (Fatigue Severity Scale)", short:"FSS · gravidade da fadiga", about:"Sobre o quanto o cansaço (fadiga) afeta você.", type:"likert", items:FSS_ITEMS, opts:FSS_OPTS,
-  intro:"Estas perguntas são sobre o quanto a fadiga (cansaço) afeta sua vida. Escolha o quanto você concorda com cada frase.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+(v+1),0); const mean=a.length?sum/a.length:0; const pct=a.length?((mean-1)/6)*100:0; return {pct, raw:sum, n:a.length, mean}; } },
- psqi: { title:"PSQI (Índice de Qualidade do Sono de Pittsburgh)", short:"PSQI · qualidade do sono", about:"Sobre a qualidade do seu sono.", type:"sections", data:PSQI_SECTIONS,
-  intro:"Estas perguntas são sobre a qualidade do seu sono nas últimas semanas.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*3))*100:0, raw:sum, n:a.length}; } },
- hit6: { title:"HIT-6 (Headache Impact Test)", short:"HIT-6 · impacto da dor de cabeça/enxaqueca", about:"Sobre o impacto das suas dores de cabeça.", type:"likert", items:HIT6_ITEMS, opts:HIT6_OPTS,
-  intro:"Estas perguntas são sobre o quanto as dores de cabeça ou enxaquecas afetam seu dia a dia.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
- fabqpa: { title:"FABQ — subescala atividade física", short:"FABQ-AF · medo-evitação de atividade física", about:"Sobre sua opinião sobre atividade física e dor.", type:"likert", items:FABQ_PA_ITEMS, opts:FABQ_OPTS,
-  intro:"Estas perguntas são sobre a sua opinião a respeito de atividade física e da sua dor — não é sobre o que você sente no corpo, é sobre o que você pensa e acredita. É a mesma lógica do questionário sobre trabalho que talvez você já tenha respondido, mas agora sobre atividade física em geral.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*6))*100:0, raw:sum, n:a.length}; } },
- comi: { title:"COMI-Back (Core Outcome Measures Index)", short:"COMI-Back · desfecho multidimensional de coluna", about:"Sobre a sua coluna, de forma resumida.", type:"sections", data:COMI_SECTIONS,
-  intro:"Estas perguntas são sobre dor, bem-estar e o impacto do seu problema de coluna no trabalho e na vida, de forma resumida.",
-  score(answers){
-   let raw=0, maxPossible=0, n=0;
-   answers.forEach((v,i)=>{ if(isAnswered(v)){ raw+=v; maxPossible+=COMI_MAX[i]; n++; } });
-   return {pct: maxPossible?(raw/maxPossible)*100:0, raw, n, maxPossible};
-  } },
- hads: { title:"HADS (Hospital Anxiety and Depression Scale)", short:"HADS · ansiedade e depressão", about:"Sobre como você tem se sentido emocionalmente.", type:"likert", items:HADS_ITEMS, opts:HADS_OPTS,
-  intro:"Estas perguntas são sobre como você tem se sentido emocionalmente nos últimos dias. Não é sobre o problema físico, é sobre o seu estado de humor.",
-  score(answers){
-   let sum=0, n=0, anxSum=0, anxN=0, depSum=0, depN=0;
-   answers.forEach((v,i)=>{
-    if(isAnswered(v)){
-     n++;
-     const val = HADS_REVERSE.includes(i) ? (3-v) : v;
-     sum += val;
-     if(i<7){ anxSum+=val; anxN++; } else { depSum+=val; depN++; }
-    }
-   });
-   return {pct: n?(sum/(n*3))*100:0, raw:sum, n, anxSum, anxN, depSum, depN};
-  } },
- csi: { title:"CSI (Central Sensitization Inventory)", short:"CSI · sensibilização central", about:"Sobre sintomas físicos e emocionais diversos.", type:"likert", items:CSI_ITEMS, opts:CSI_OPTS,
-  intro:"Estas perguntas são sobre sintomas físicos e emocionais que você pode ter sentido recentemente. Algumas parecem não ter relação direta com o seu problema principal — responda igual assim, com sinceridade.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*4))*100:0, raw:sum, n:a.length}; } },
- orebro: { title:"Örebro (versão curta) — risco de cronificação", short:"Örebro-curto · prognóstico de retorno ao trabalho", about:"Sobre sua dor e sua expectativa sobre o futuro.", type:"sections", data:OREBRO_SECTIONS,
-  intro:"Estas perguntas são sobre a sua dor, seu humor e sua própria expectativa sobre o futuro. Elas ajudam a estimar o risco de a situação se prolongar, não descrevem só o que você sente hoje.",
-  score(answers){
-   const OREBRO_MAX = [7,10,10,4,10,10,10,10,10,10];
-   let raw=0, maxPossible=0, n=0;
-   answers.forEach((v,i)=>{ if(isAnswered(v)){ raw+=v; maxPossible+=OREBRO_MAX[i]; n++; } });
-   const scaled = maxPossible ? (raw/maxPossible)*100 : 0;
-   return {pct:scaled, raw:Math.round(scaled), n, maxPossible};
-  } },
- ess: { title:"ESS (Epworth Sleepiness Scale)", short:"ESS · sonolência diurna", about:"Sobre a chance de você cochilar em situações do dia a dia.", type:"likert", items:ESS_ITEMS, opts:ESS_OPTS,
-  intro:"Estas perguntas são sobre a chance de você cochilar ou pegar no sono em situações comuns do dia a dia — não é sobre estar cansado(a), é sobre realmente cochilar.",
-  score(answers){ const a=answers.filter(v=>isAnswered(v)); const sum=a.reduce((s,v)=>s+v,0); return {pct:a.length?(sum/(a.length*3))*100:0, raw:sum, n:a.length}; } },
- chalder: { title:"Escala de Fadiga de Chalder", short:"Chalder · fadiga física e mental", about:"Sobre o seu cansaço, separando o físico do mental.", type:"likert", items:CHALDER_ITEMS, opts:CHALDER_OPTS,
-  intro:"Estas perguntas são sobre cansaço (fadiga) — algumas sobre o corpo, outras sobre a cabeça (concentração, memória). Compare com o que era normal pra você antes do problema.",
-  score(answers){
-   const phys = answers.slice(0,7).filter(v=>isAnswered(v));
-   const ment = answers.slice(7,11).filter(v=>isAnswered(v));
-   const physSum = phys.reduce((s,v)=>s+v,0), mentSum = ment.reduce((s,v)=>s+v,0);
-   const n = phys.length+ment.length;
-   const sum = physSum+mentSum;
-   return {pct:n?(sum/(n*3))*100:0, raw:sum, n, physSum, physN:phys.length, mentSum, mentN:ment.length};
-  } },
- sf36: { title:"SF-36 (Medical Outcomes Study 36-Item Short Form)", short:"SF-36 · qualidade de vida em 8 domínios", about:"Sobre sua qualidade de vida em vários aspectos: corpo, emoções, dor, energia e saúde em geral.", type:"sections", data:SF36_SECTIONS,
-  intro:"Este questionário é mais longo e cobre vários aspectos diferentes da sua saúde — o corpo, as emoções, a dor, a energia e como você avalia sua saúde de um jeito geral. Vá com calma, uma pergunta de cada vez.",
-  score(answers){
-   const itemMax = [2,2,2,2,2,2,2,2,2,2, 1,1,1,1, 1,1,1, 5,5,5,5, 4,4, 5,4, 5,5,5,5,5, 4,4,4,4,4];
-   const ranges = [[0,10],[10,14],[14,17],[17,21],[21,23],[23,25],[25,30],[30,35]];
-   const labels = ["Capacidade Funcional","Aspectos Físicos","Aspectos Emocionais","Vitalidade","Aspectos Sociais","Dor","Saúde Mental","Estado Geral de Saúde"];
-   const domains = ranges.map(([start,end],di)=>{
-    let raw=0, max=0, n=0;
-    for(let i=start;i<end;i++){
-     const v = answers[i];
-     if(isAnswered(v)){ raw+=v; max+=itemMax[i]; n++; }
-    }
-    return {label:labels[di], pct: max?(raw/max)*100:null, n, total:end-start};
-   });
-   const answeredAll = answers.filter(v=>isAnswered(v)).length;
-   return {domains, n:answeredAll};
-  } },
- masq: { title:"MASQ (Multiple Ability Self-Report Questionnaire)", short:"MASQ · queixas cognitivas em 6 domínios", about:"Sobre memória, atenção, linguagem e coordenação no seu dia a dia.", type:"likert", items:MASQ_ITEMS, opts:MASQ_OPTS,
-  intro:"Estas perguntas são sobre coisas do dia a dia relacionadas à memória, atenção, orientação e coordenação. Pense em como você tem estado recentemente, comparado a como era antes.",
-  score(answers){
-   const ranges = [[0,6],[6,12],[12,18],[18,24],[24,31],[31,38]];
-   const labels = ["Linguagem","Visuoespacial","Memória Verbal","Memória Visual","Atenção/Concentração","Motora/Práxis"];
-   const domains = ranges.map(([start,end],di)=>{
-    let raw=0, max=0, n=0;
-    for(let i=start;i<end;i++){
-     const v = answers[i];
-     if(isAnswered(v)){ raw+=v; max+=4; n++; }
-    }
-    return {label:labels[di], pct: max?(raw/max)*100:null, n, total:end-start};
-   });
-   const answeredAll = answers.filter(v=>isAnswered(v)).length;
-   return {domains, n:answeredAll};
-  } }
+const LEGACY_INSTRUMENTS = {
+ "odi": {
+  "title": "Índice de Incapacidade de Oswestry (ODI)",
+  "short": "ODI · coluna lombar",
+  "about": "Sobre a parte de baixo das suas costas (lombar).",
+  "type": "sections",
+  "legacySchemaOnly": true
+ },
+ "ndi": {
+  "title": "Índice de Incapacidade Cervical (NDI)",
+  "short": "NDI · coluna cervical",
+  "about": "Sobre o seu pescoço.",
+  "type": "sections",
+  "legacySchemaOnly": true
+ },
+ "tsk13": {
+  "title": "Escala Tampa de Cinesiofobia (TSK-13)",
+  "short": "TSK-13 · medo do movimento",
+  "about": "Sobre o medo de se movimentar.",
+  "type": "likert",
+  "legacySchemaOnly": true
+ },
+ "quickdash": {
+  "title": "QuickDASH (função do membro superior)",
+  "short": "QuickDASH · membro superior",
+  "about": "Sobre o seu braço, ombro ou mão.",
+  "type": "likert",
+  "legacySchemaOnly": true
+ },
+ "whodas": {
+  "title": "WHODAS 2.0 (12 itens) — funcionalidade geral",
+  "short": "WHODAS 2.0 · funcionalidade global",
+  "about": "Sobre suas atividades do dia a dia, de forma geral.",
+  "type": "likert",
+  "legacySchemaOnly": true
+ },
+ "eva": {
+  "title": "END — Escala Numérica de Dor (0 a 10)",
+  "short": "END · dor em 4 condições",
+  "about": "Sobre a intensidade da sua dor, numa escala de 0 a 10.",
+  "type": "sliders",
+  "items": [
+   "Agora, em repouso (sem fazer esforço)",
+   "No pior momento de dor do seu dia",
+   "No melhor momento de dor do seu dia",
+   "Fazendo um esforço parecido com o do seu trabalho (ex.: levantar peso, ficar em pé bastante tempo, movimentos repetidos)"
+  ],
+  "intro": "Agora vamos medir sua dor numa escala de 0 a 10, em momentos diferentes. 0 é sem dor nenhuma, 10 é a pior dor que você pode imaginar na vida."
+ },
+ "dn4": {
+  "title": "DN4 — versão entrevista (dor neuropática)",
+  "short": "DN4 · qualidade da dor",
+  "about": "Sobre como é a sensação da sua dor.",
+  "type": "yesno",
+  "legacySchemaOnly": true
+ },
+ "fabq": {
+  "title": "FABQ — subescala trabalho",
+  "short": "FABQ-trabalho · medo-evitação",
+  "about": "Sobre sua opinião sobre trabalho e dor.",
+  "type": "likert",
+  "legacySchemaOnly": true
+ },
+ "pcs": {
+  "title": "PCS (Pain Catastrophizing Scale)",
+  "short": "PCS · catastrofização da dor",
+  "about": "Sobre os pensamentos que você tem quando sente dor.",
+  "type": "likert",
+  "legacySchemaOnly": true
+ },
+ "rmdq": {
+  "title": "Roland-Morris (RMDQ)",
+  "short": "RMDQ · incapacidade lombar leve-moderada",
+  "about": "Sobre a parte de baixo das suas costas (lombar), em um jeito mais simples.",
+  "type": "yesno",
+  "legacySchemaOnly": true
+ },
+ "mjoa": {
+  "title": "mJOA (mielopatia cervical)",
+  "short": "mJOA · função motora, sensibilidade e esfíncter",
+  "about": "Sobre força, sensibilidade e controle da urina, relacionados ao seu pescoço.",
+  "type": "sections",
+  "legacySchemaOnly": true
+ },
+ "psfs": {
+  "title": "PSFS (Escala Funcional Específica do Paciente)",
+  "short": "PSFS · atividades escolhidas pelo próprio paciente",
+  "about": "Sobre atividades que você mesmo escolhe.",
+  "type": "psfs",
+  "items": [
+   "Atividade 1 de 3 — pense em algo que você tem dificuldade de fazer hoje por causa do problema",
+   "Atividade 2 de 3",
+   "Atividade 3 de 3"
+  ],
+  "intro": "Agora pense em até 3 atividades do seu dia a dia que ficaram difíceis por causa do problema. Para cada uma, dê uma nota de 0 a 10: 0 é 'não consigo fazer de jeito nenhum', 10 é 'consigo fazer como fazia antes'."
+ },
+ "wiq": {
+  "title": "WIQ (Walking Impairment Questionnaire)",
+  "short": "WIQ · caminhada e claudicação",
+  "about": "Sobre sua capacidade de caminhar e subir escadas.",
+  "type": "likert",
+  "legacySchemaOnly": true
+ },
+ "lefs": {
+  "title": "LEFS (Lower Extremity Functional Scale)",
+  "short": "LEFS · função de quadril, joelho e marcha",
+  "about": "Sobre suas pernas (quadril, joelho, marcha).",
+  "type": "likert",
+  "legacySchemaOnly": true
+ },
+ "sfi": {
+  "title": "SFI-10-Br (Spine Functional Index)",
+  "short": "SFI-10 · coluna como unidade única",
+  "about": "Sobre a sua coluna inteira (pescoço, meio e lombar juntos).",
+  "type": "sections",
+  "legacySchemaOnly": true
+ },
+ "nmq": {
+  "title": "Questionário Nórdico de Sintomas Osteomusculares (QNSO/NMQ)",
+  "short": "NMQ · mapa corporal de sintomas",
+  "about": "Sobre dor em diferentes partes do corpo.",
+  "type": "nmq",
+  "items": [
+   "Pescoço",
+   "Ombros",
+   "Região torácica (parte de cima das costas)",
+   "Cotovelos",
+   "Região lombar (parte de baixo das costas)",
+   "Punhos e mãos",
+   "Quadril e coxas",
+   "Joelhos",
+   "Tornozelos e pés"
+  ],
+  "intro": "Estas perguntas são sobre dor, desconforto ou dormência em diferentes partes do corpo — nos últimos 12 meses e nos últimos 7 dias."
+ },
+ "ict": {
+  "title": "ICT (Índice de Capacidade para o Trabalho / WAI)",
+  "short": "ICT-WAI · capacidade e prognóstico laboral",
+  "about": "Sobre sua capacidade de trabalhar.",
+  "type": "sections",
+  "legacySchemaOnly": true
+ },
+ "fiqr": {
+  "title": "FIQR (Fibromyalgia Impact Questionnaire — Revised)",
+  "short": "FIQR · impacto global da fibromialgia",
+  "about": "Sobre o impacto da fibromialgia na sua vida.",
+  "type": "sections",
+  "legacySchemaOnly": true
+ },
+ "wpi": {
+  "title": "WPI (Widespread Pain Index — critério de fibromialgia)",
+  "short": "WPI · mapa corporal de dor (ACR)",
+  "about": "Sobre em quais partes do corpo você sente dor.",
+  "type": "yesno",
+  "legacySchemaOnly": true
+ },
+ "sss": {
+  "title": "SSS (Symptom Severity Scale — companheira do WPI)",
+  "short": "SSS · gravidade dos sintomas (ACR)",
+  "about": "Sobre a gravidade de alguns sintomas (fadiga, sono, memória).",
+  "type": "sections",
+  "legacySchemaOnly": true
+ },
+ "hoos": {
+  "title": "Questionário funcional descritivo de quadril (baseado em domínios do HOOS)",
+  "short": "Quadril · versão reduzida, não é o HOOS oficial",
+  "about": "Sobre o seu quadril.",
+  "type": "likert",
+  "legacySchemaOnly": true
+ },
+ "koos": {
+  "title": "Questionário funcional descritivo de joelho (baseado em domínios do KOOS)",
+  "short": "Joelho · versão reduzida, não é o KOOS oficial",
+  "about": "Sobre o seu joelho.",
+  "type": "likert",
+  "legacySchemaOnly": true
+ },
+ "fss": {
+  "title": "FSS (Fatigue Severity Scale)",
+  "short": "FSS · gravidade da fadiga",
+  "about": "Sobre o quanto o cansaço (fadiga) afeta você.",
+  "type": "likert",
+  "legacySchemaOnly": true
+ },
+ "psqi": {
+  "title": "PSQI (Índice de Qualidade do Sono de Pittsburgh)",
+  "short": "PSQI · qualidade do sono",
+  "about": "Sobre a qualidade do seu sono.",
+  "type": "sections",
+  "legacySchemaOnly": true
+ },
+ "hit6": {
+  "title": "HIT-6 (Headache Impact Test)",
+  "short": "HIT-6 · impacto da dor de cabeça/enxaqueca",
+  "about": "Sobre o impacto das suas dores de cabeça.",
+  "type": "likert",
+  "legacySchemaOnly": true
+ },
+ "fabqpa": {
+  "title": "FABQ — subescala atividade física",
+  "short": "FABQ-AF · medo-evitação de atividade física",
+  "about": "Sobre sua opinião sobre atividade física e dor.",
+  "type": "likert",
+  "legacySchemaOnly": true
+ },
+ "comi": {
+  "title": "COMI-Back (Core Outcome Measures Index)",
+  "short": "COMI-Back · desfecho multidimensional de coluna",
+  "about": "Sobre a sua coluna, de forma resumida.",
+  "type": "sections",
+  "legacySchemaOnly": true
+ },
+ "hads": {
+  "title": "HADS (Hospital Anxiety and Depression Scale)",
+  "short": "HADS · ansiedade e depressão",
+  "about": "Sobre como você tem se sentido emocionalmente.",
+  "type": "likert",
+  "legacySchemaOnly": true
+ },
+ "csi": {
+  "title": "CSI (Central Sensitization Inventory)",
+  "short": "CSI · sensibilização central",
+  "about": "Sobre sintomas físicos e emocionais diversos.",
+  "type": "likert",
+  "legacySchemaOnly": true
+ },
+ "orebro": {
+  "title": "Örebro (versão curta) — risco de cronificação",
+  "short": "Örebro-curto · prognóstico de retorno ao trabalho",
+  "about": "Sobre sua dor e sua expectativa sobre o futuro.",
+  "type": "sections",
+  "legacySchemaOnly": true
+ },
+ "ess": {
+  "title": "ESS (Epworth Sleepiness Scale)",
+  "short": "ESS · sonolência diurna",
+  "about": "Sobre a chance de você cochilar em situações do dia a dia.",
+  "type": "likert",
+  "legacySchemaOnly": true
+ },
+ "chalder": {
+  "title": "Escala de Fadiga de Chalder",
+  "short": "Chalder · fadiga física e mental",
+  "about": "Sobre o seu cansaço, separando o físico do mental.",
+  "type": "likert",
+  "legacySchemaOnly": true
+ },
+ "sf36": {
+  "title": "SF-36 (Medical Outcomes Study 36-Item Short Form)",
+  "short": "SF-36 · qualidade de vida em 8 domínios",
+  "about": "Sobre sua qualidade de vida em vários aspectos: corpo, emoções, dor, energia e saúde em geral.",
+  "type": "sections",
+  "legacySchemaOnly": true
+ },
+ "masq": {
+  "title": "MASQ (Multiple Ability Self-Report Questionnaire)",
+  "short": "MASQ · queixas cognitivas em 6 domínios",
+  "about": "Sobre memória, atenção, linguagem e coordenação no seu dia a dia.",
+  "type": "likert",
+  "legacySchemaOnly": true
+ }
 };
-const QORDER = ["odi","ndi","tsk13","quickdash","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","sfi","nmq","ict","fiqr","wpi","sss","hoos","koos","fss","psqi","hit6","fabqpa","comi","hads","csi","orebro","ess","chalder","sf36","masq"];
+/* Formulários atuais. Índices armazenados são zero-based; cada algoritmo faz
+   sua própria recodificação. Nunca aplicar estes schemas a versões antigas. */
+const CURRENT_VALIDATED_INSTRUMENTS = {};
+const sum = a => a.reduce((s,v)=>s+v,0);
+const metric = (name,value,max,direction,extra={}) => ({name,value,max,direction,...extra});
+const numbers = max => Array.from({length:max+1},(_,i)=>String(i));
+function register(key, q, meta){
+ q.answerPolicy={allowNull:true,allowNA:false};
+ q.short=q.title; q.about=q.about||q.title;
+ CURRENT_VALIDATED_INSTRUMENTS[key]=q;
+ INSTRUMENT_META[key]={status:'VALID_OFFICIAL',administrationBlocked:false,minAnswered:q.type==='sections'?q.data.length:q.items.length,version:meta.version,licenseStatus:meta.licenseStatus,note:meta.note||'',...meta};
+}
+register('sfi',{
+ title:'SFI-10-Br — Spine Functional Index',type:'likert',
+ intro:'Sua coluna pode dificultar a realização de algumas coisas que você normalmente faz. Pense em você nos últimos dias. POR CAUSA DA MINHA COLUNA:',
+ items:['Eu evito tarefas pesadas (por ex. limpeza, levantar mais de 5 kg, jardinagem, etc.).','Eu tenho dor/problema quase o tempo todo.','Eu tenho dificuldade com tarefas domésticas ou familiares.','Eu durmo mal.','Eu preciso de ajuda com cuidados pessoais (por ex. com banho e higiene pessoal).','Minhas atividades diárias (trabalho, contato social) estão prejudicadas.','Eu preciso de ajuda ou sou mais lento(a) para me vestir.','Eu tenho dificuldade em ficar sentado(a).','Eu consigo ficar em pé apenas por pouco tempo.','Eu tenho dificuldades para me abaixar (por ex. para pegar um objeto no chão ou colocar as meias).'],
+ opts:['NÃO','Parcialmente','SIM'],
+ score:a=>({metrics:[metric('SFI-10-Br',100-sum(a)*5,100,'Maior = melhor função')],calculation:{raw:sum(a)/2,formula:'100 − (soma de 0 / 0,5 / 1 × 10)',denominator:10}})
+},{version:'SFI-10-Br-Freitas-2024-v1',licenseStatus:'CC_BY_4_0',source:'https://doi.org/10.1186/s12891-024-07406-0',brazilSource:'https://doi.org/10.1186/s12891-024-07406-0',missing:'Coleta completa: 10/10. Não se imputa resposta; o artigo não estabelece regra de imputação.',note:'Freitas et al., 2024; suplemento dos autores. Transposição para telas individuais; redação e alternativas preservadas.'});
+
+const FABQ_ALL=['Minha dor foi causada por atividade física','A atividade física faz minha dor piorar','A atividade física pode afetar minhas costas','Eu não deveria realizar atividades físicas que poderiam fazer a minha dor piorar','Eu não posso realizar atividades físicas que poderiam fazer minha dor piorar','Minha dor foi causada pelo meu trabalho ou por um acidente de trabalho','Meu trabalho agravou minha dor','Eu tenho uma reivindicação de pensão em virtude da minha dor','Meu trabalho é muito pesado para mim','Meu trabalho faz ou poderia fazer minha dor piorar','Meu trabalho pode prejudicar minhas costas','Eu não deveria realizar meu trabalho normal com minha dor atual','Eu não posso realizar meu trabalho normal com minha dor atual','Eu não posso realizar meu trabalho normal até que minha dor seja tratada','Eu não acho que estarei de volta ao trabalho normal dentro de três meses','Eu não acho que algum dia estarei apto para retornar ao meu trabalho'];
+const fabqScore=a=>({metrics:[metric('FABQ atividade física',sum([1,2,3,4].map(i=>a[i])),24,'Maior = mais crenças de medo e evitação'),metric('FABQ trabalho',sum([5,6,8,9,10,11,14].map(i=>a[i])),42,'Maior = mais crenças de medo e evitação')],calculation:{physicalItems:[2,3,4,5],workItems:[6,7,9,10,11,12,15],excludedItems:[1,8,13,14,16]}});
+register('fabq',{
+ title:'FABQ-Brasil — atividade física e trabalho',type:'likert',items:FABQ_ALL,
+ opts:['0 — Discordo completamente','1 — Discordo razoavelmente','2 — Discordo ligeiramente','3 — Não sei dizer','4 — Concordo ligeiramente','5 — Concordo razoavelmente','6 — Concordo completamente'],
+ intro:'Nos itens 1 a 5, informe quanto as atividades físicas como fletir o tronco, levantar, caminhar ou dirigir afetam ou afetariam sua dor nas costas. Nos itens 6 a 16, informe quanto o seu trabalho normal afeta ou afetaria sua dor nas costas.',score:fabqScore
+},{version:'FABQ-Brasil-Abreu-2008-16-v1',licenseStatus:'PUBLISHED_CC_BY_FORM',source:'https://doi.org/10.1016/0304-3959(93)90127-B',brazilSource:'https://doi.org/10.1590/S0102-311X2008000300015',missing:'Coleta completa dos 16 itens; não há imputação nesta implementação.',note:'Abreu et al., 2008, tabela 1. Sem total combinado e sem faixas de gravidade.'});
+
+register('rmdq',{
+ title:'RMDQ — Roland-Morris Brasil (24 itens)',type:'yesno',
+ intro:'Pense em você hoje. Responda Sim apenas à frase que tiver certeza que descreve você hoje. Se a frase não descreve você, responda Não. A validação original brasileira utilizou entrevista; o profissional pode acompanhar a aplicação.',
+ items:['Fico em casa a maior parte do tempo por causa de minhas costas.','Mudo de posição freqüentemente tentando deixar minhas costas confortáveis.','Ando mais devagar que o habitual por causa de minhas costas.','Por causa de minhas costas eu não estou fazendo nenhum dos meus trabalhos que geralmente faço em casa.','Por causa de minhas costas, eu uso o corrimão para subir escadas.','Por causa de minhas costas, eu me deito para descansar mais freqüentemente.','Por causa de minhas costas, eu tenho que me apoiar em alguma coisa para me levantar de uma cadeira normal.','Por causa de minhas costas, tento conseguir com que outras pessoas façam as coisas por mim.','Eu me visto mais lentamente que o habitual por causa de minhas costas.','Eu somente fico em pé por períodos curtos de tempo por causa de minhas costas.','Por causa de minhas costas evito me abaixar ou me ajoelhar.','Encontro dificuldades em me levantar de uma cadeira por causa de minhas costas.','As minhas costas doem quase que o tempo todo.','Tenho dificuldade em me virar na cama por causa das minhas costas.','Meu apetite não é muito bom por causa das dores em minhas costas.','Tenho problemas para colocar minhas meias (ou meia calça) por causa das dores em minhas costas.','Caminho apenas curtas distâncias por causa de minhas dores nas costas.','Não durmo tão bem por causa de minhas costas.','Por causa de minhas dores nas costas, eu me visto com ajuda de outras pessoas.','Fico sentado a maior parte do dia por causa de minhas costas.','Evito trabalhos pesados em casa por causa de minhas costas.','Por causa das dores em minhas costas, fico mais irritado e mal humorado com as pessoas do que o habitual.','Por causa de minhas costas, eu subo escadas mais vagarosamente do que o habitual.','Fico na cama a maior parte do tempo por causa de minhas costas.'],
+ score:a=>({metrics:[metric('RMDQ',sum(a),24,'Maior = maior limitação relacionada às costas')],calculation:{positiveAnswers:sum(a),denominator:24}})
+},{version:'RMDQ-Brasil-Nusbaum-2001-24-v1',licenseStatus:'PUBLIC_DOMAIN',source:'https://www.sralab.org/rehabilitation-measures/roland-morris-disability-questionnaire',brazilSource:'https://doi.org/10.1590/S0100-879X2001000200007',missing:'Exige 24 respostas explícitas; campo vazio não é Não.',note:'Redação do apêndice de Nusbaum et al. Preservada sem extrapolar para incapacidade laboral.'});
+
+register('eva',{
+ title:'END — Escala Numérica de Dor (4 situações)',type:'sliders',
+ items:['Agora, em repouso (sem fazer esforço)','No pior momento de dor do seu dia','No melhor momento de dor do seu dia','Fazendo um esforço parecido com o do seu trabalho (ex.: levantar peso, ficar em pé bastante tempo, movimentos repetidos)'],
+ intro:'Dê uma nota de 0 a 10 para a sua dor em cada situação: 0 = nenhuma dor; 10 = a pior dor imaginável.',
+ score:a=>({metrics:[metric('END — repouso',a[0],10,'Maior = maior intensidade da dor'),metric('END — pior momento do dia',a[1],10,'Maior = maior intensidade da dor'),metric('END — melhor momento do dia',a[2],10,'Maior = maior intensidade da dor'),metric('END — esforço semelhante ao trabalho',a[3],10,'Maior = maior intensidade da dor')],calculation:{denominator:10,formula:'Cada situação é uma END independente; não há soma nem média.'},interpretation:'Escala numérica sem faixas universais de gravidade. Cada nota descreve a intensidade autorreferida naquela situação.'})
+},{version:'END-0-10-4-situacoes-v2',licenseStatus:'GENERIC_NUMERIC_RATING',source:'https://doi.org/10.1016/j.jpain.2004.10.004',brazilSource:'https://pubmed.ncbi.nlm.nih.gov/18923324/',missing:'Exige as 4 respostas.',note:'Escala numérica de dor de uso livre, aplicada em quatro contextos (repouso, pior e melhor momento do dia, esforço semelhante ao trabalho). Sem faixas universais de gravidade.'});
+
+register('psfs',{
+ title:'PSFS — Escala Funcional Específica do Paciente',type:'psfs',items:['Atividade 1','Atividade 2','Atividade 3'],intro:'Identifique três atividades importantes que você não consegue fazer ou tem dificuldade para fazer em consequência do seu problema. Avalie sua capacidade atual: 0 = incapaz de realizar; 10 = capaz de realizar no mesmo nível de antes da lesão ou problema.',
+ score:a=>({metrics:[...a.map((v,i)=>metric('Atividade '+(i+1)+' — '+v.activity,v.score,10,'Maior = melhor função')),metric('PSFS — média',sum(a.map(v=>v.score))/3,10,'Maior = melhor função')],calculation:{sum:sum(a.map(v=>v.score)),denominator:3}})
+},{version:'PSFS-BR-Costa-2008-three-activities-v1',licenseStatus:'CLINICAL_USE_ATTRIBUTION',source:'https://doi.org/10.3138/ptc.47.4.258',brazilSource:'https://pubmed.ncbi.nlm.nih.gov/18923324/',missing:'Três atividades nomeadas e pontuadas; sem imputação nem exclusão silenciosa de atividade.',note:'Stratford et al.; adaptação brasileira Costa et al., 2008. A seleção de atividades deve corresponder ao problema avaliado.'});
+
+const FSQ_REGIONS=['Lado esquerdo da mandíbula (queixo)','Ombro esquerdo','Braço esquerdo (entre o ombro e o cotovelo esquerdo)','Antebraço esquerdo (entre o cotovelo e a mão esquerda)','Lado direito da mandíbula (queixo)','Ombro direito','Braço direito (entre o ombro e o cotovelo direito)','Antebraço direito (entre o cotovelo e a mão direita)','Quadril esquerdo','Coxa esquerda','Parte inferior da perna esquerda (entre o joelho e o pé esquerdo)','Quadril direito','Coxa direita','Parte inferior da perna direita (entre o joelho e o pé direito)','Pescoço','Parte superior das costas','Parte inferior das costas','Peito (tórax)','Abdome'];
+const FSQ_SEVERITY=['Não senti','Sintoma leve ou suave, senti de vez em quando','Sintoma médio, senti frequentemente','Sintoma forte, senti continuamente, atrapalhando a rotina'];
+register('wpi',{
+ title:'FSQ-Brazil 2016 — WPI + SSS',type:'sections',intro:'Questionário de Pesquisa em Fibromialgia — FSQ-Brazil. Informe dor ou desconforto nos últimos 7 dias. As perguntas de sintomas indicam suas próprias janelas de tempo. Este questionário não estabelece diagnóstico automaticamente.',
+ data:[...FSQ_REGIONS.map(t=>['Nos últimos 7 dias, teve dor ou desconforto: '+t+'?',['Não','Sim']]),
+ ['Nos últimos 7 DIAS, você sentiu FADIGA OU CANSAÇO?',FSQ_SEVERITY],
+ ['Nos últimos 7 DIAS, você teve um SONO NÃO REPARADOR, ACORDOU CANSADO, como se não tivesse dormido o suficiente?',FSQ_SEVERITY],
+ ['Nos últimos 7 DIAS, você sentiu DIFICULDADE DE RACIOCÍNIO OU DE MEMÓRIA?',FSQ_SEVERITY],
+ ...['Dor de cabeça','Dor ou cólicas em abdome inferior (abaixo do umbigo)','Depressão / tristeza'].map(t=>['Durante os últimos 6 MESES, você sentiu: '+t+'?',['Não','Sim']]),
+ ['Considerando todas as perguntas deste questionário, em geral, os sintomas que você sentiu estiveram frequentemente presentes por pelo menos 3 MESES?',['Não','Sim']]],
+ score:a=>{
+  const wpi=sum(a.slice(0,19)),sss=sum(a.slice(19,25));
+  const regions=[[1,2,3],[5,6,7],[8,9,10],[11,12,13],[14,15,16]].filter(g=>g.some(i=>a[i]===1)).length;
+  const thresholds=(wpi>=7&&sss>=5)||(wpi>=4&&wpi<=6&&sss>=9),duration=a[25]===1;
+  return {metrics:[metric('WPI',wpi,19,'Maior = mais locais de dor'),metric('SSS',sss,12,'Maior = maior gravidade dos sintomas')],interpretation:(thresholds&&regions>=4&&duration?'Critérios numéricos e condições autorreferidas de 2016 atendidos.':'Critérios numéricos e condições autorreferidas de 2016 não atendidos.')+' Não estabelece diagnóstico de fibromialgia automaticamente.',calculation:{generalizedRegions:regions,requiredRegions:4,durationAtLeast3Months:duration,thresholdsMet:thresholds,criteriaYear:2016}};
+ }
+},{version:'FSQ-Brazil-Daltrozo-2020-ACR2016-v1',licenseStatus:'CC_BY_4_0',source:'https://doi.org/10.1016/j.semarthrit.2016.08.012',brazilSource:'https://doi.org/10.1186/s42358-020-00139-3',missing:'Exige todos os 26 campos. WPI e SSS pertencem à mesma aplicação; nunca combinar registros separados.',note:'Daltrozo, Paupitz e Neves, 2020, figura 1. Mandíbula, tórax e abdome contam no WPI, mas não na distribuição generalizada.'});
+
+register('lefs',{
+ title:'LEFS — versão brasileira de Metsavaht (2012)',type:'likert',
+ intro:'Estamos interessados em saber se você está tendo alguma dificuldade com as atividades listadas abaixo devido ao seu problema nos membros inferiores para o qual você está procurando tratamento. Hoje, você tem ou teria alguma dificuldade para:',
+ items:['Qualquer uma de suas atividades usuais no trabalho, em casa ou na escola.','Seus passatempos habituais, atividades recreativas ou esportivas.','Ultrapassar um obstáculo de 50cm de altura, como entrar ou sair de uma banheira.','Caminhar do quarto à sala.','Colocar o sapato ou as meias.','Ficar agachado (de cócoras).','Levantar um objeto, como uma sacola de compras do chão.','Realizar atividades domiciliares leves.','Realizar atividades domiciliares pesadas.','Entrar ou sair do carro.','Caminhar dois quarteirões.','Caminhar 1 kilômetro.','Subir ou descer 10 degraus (1 lance de escada).','Ficar em pé durante 1 hora.','Ficar sentado durante 1 hora.','Correr em terreno plano.','Correr em terreno acidentado (irregular).','Fazer mudanças bruscas de direção enquanto corre rapidamente.','Dar pulinhos.','Rolar para mudar de lado na cama.'],
+ opts:['Extremamente difícil ou incapaz de realizar a atividade','Bastante dificuldade','Dificuldade moderada','Um pouco de dificuldade','Sem dificuldade'],
+ score:a=>({metrics:[metric('LEFS',sum(a),80,'Maior pontuação = melhor função')],calculation:{sum:sum(a),denominator:80}})
+},{version:'LEFS-BR-Metsavaht-2012-20-v1',licenseStatus:'FREE_CLINICAL_USE',source:'https://www.sralab.org/rehabilitation-measures/lower-extremity-functional-scale',brazilSource:'https://doi.org/10.2519/jospt.2012.4101',missing:'Coleta completa de 20 itens; sem transformar ausência em zero ou normalizar total incompleto.',note:'© Paul Stratford e Jill Binkley. Tradução Metsavaht et al. Uso clínico; não constitui licença de revenda do instrumento.'});
+
+const RAND_FREQ=['Todo o tempo','A maior parte do tempo','Uma boa parte do tempo','Alguma parte do tempo','Uma pequena parte do tempo','Nunca'];
+const RAND_TRUE=['Definitivamente verdadeiro','A maioria das vezes verdadeiro','Não sei','A maioria das vezes falso','Definitivamente falso'];
+const RAND_PHYS='Durante as últimas 4 semanas, como consequência de sua saúde física: ';
+const RAND_EMO='Durante as últimas 4 semanas, como consequência de algum problema emocional (como sentir-se deprimido ou ansioso): ';
+const RAND_GROUPS={
+ 'Capacidade funcional':[3,4,5,6,7,8,9,10,11,12],
+ 'Limitações por aspectos físicos':[13,14,15,16],
+ 'Limitações por aspectos emocionais':[17,18,19],
+ 'Energia/fadiga':[23,27,29,31],
+ 'Bem-estar emocional':[24,25,26,28,30],
+ 'Aspectos sociais':[20,32],
+ 'Dor':[21,22],
+ 'Saúde geral':[1,33,34,35,36]
+};
+const RAND_MAPS=Array.from({length:36},(_,i)=>{
+ const n=i+1;
+ if([1,2,20,22,34,36].includes(n)) return [100,75,50,25,0];
+ if(n>=3&&n<=12) return [0,50,100];
+ if(n>=13&&n<=19) return [0,100];
+ if([21,23,26,27,30].includes(n)) return [100,80,60,40,20,0];
+ if([24,25,28,29,31].includes(n)) return [0,20,40,60,80,100];
+ return [0,25,50,75,100];
+});
+register('sf36',{
+ title:'RAND 36-Item Health Survey 1.0 — português brasileiro',type:'sections',
+ intro:'Esta pesquisa questiona você sobre sua saúde. Responda cada questão. Observe o período indicado em cada pergunta. Desenvolvido na RAND como parte do Medical Outcomes Study. Itens da tradução brasileira de Ciconelli; algoritmo RAND 1.0, validado no Brasil por Lins-Kusterer et al. (2022). Apresentação eletrônica em telas individuais.',
+ data:[
+ ['Em geral, você diria que sua saúde é:',['Excelente','Muito boa','Boa','Ruim','Muito ruim']],
+ ['Comparada a um ano atrás, como você classificaria sua saúde em geral, agora?',['Muito melhor agora do que há um ano atrás','Um pouco melhor agora do que há um ano atrás','Quase a mesma de um ano atrás','Um pouco pior agora do que há um ano atrás','Muito pior agora do que há um ano atrás']],
+ ...['Atividades vigorosas, que exigem muito esforço, tais como correr, levantar objetos pesados, participar em esportes árduos','Atividades moderadas, tais como mover uma mesa, passar aspirador de pó, jogar bola, varrer a casa','Levantar ou carregar mantimentos','Subir vários lances de escada','Subir um lance de escada','Curvar-se, ajoelhar-se ou dobrar-se','Andar mais de 1 quilômetro','Andar vários quarteirões','Andar um quarteirão','Tomar banho ou vestir-se'].map(t=>['Atualmente, durante um dia comum, devido a sua saúde, você tem dificuldade para: '+t+'?',['Sim. Dificulta muito','Sim. Dificulta um pouco','Não. Não dificulta de modo algum']]),
+ ...['Você diminuiu a quantidade de tempo que se dedicava ao seu trabalho ou a outras atividades?','Realizou menos tarefas do que você gostaria?','Esteve limitado no seu tipo de trabalho ou em outras atividades?','Teve dificuldade de fazer seu trabalho ou outras atividades (p.ex.: necessitou de um esforço extra)?'].map(t=>[RAND_PHYS+t,['Sim','Não']]),
+ ...['Você diminuiu a quantidade de tempo que se dedicava ao seu trabalho ou a outras atividades?','Realizou menos tarefas do que você gostaria?','Não trabalhou ou não fez qualquer das atividades com tanto cuidado como geralmente faz?'].map(t=>[RAND_EMO+t,['Sim','Não']]),
+ ['Durante as últimas 4 semanas, de que maneira sua saúde física ou problemas emocionais interferiram nas suas atividades sociais normais, em relação a família, vizinhos, amigos ou em grupo?',['De forma nenhuma','Ligeiramente','Moderadamente','Bastante','Extremamente']],
+ ['Quanta dor no corpo você teve durante as últimas 4 semanas?',['Nenhuma','Muito leve','Leve','Moderada','Grave','Muito grave']],
+ ['Durante as últimas 4 semanas, quanto a dor interferiu com o seu trabalho normal (incluindo tanto o trabalho fora de casa e dentro de casa)?',['De maneira alguma','Um pouco','Moderadamente','Bastante','Extremamente']],
+ ...['cheio de vigor, cheio de vontade, cheio de força','uma pessoa muito nervosa','tão deprimido que nada pode animá-lo','calmo ou tranquilo','com muita energia','desanimado e abatido','esgotado','uma pessoa feliz','cansado'].map(t=>['Durante as últimas 4 semanas, quanto tempo você tem se sentido '+t+'?',RAND_FREQ]),
+ ['Durante as últimas 4 semanas, quanto do seu tempo a sua saúde física ou problemas emocionais interferiram com as suas atividades sociais (como visitar amigos, parentes, etc.)?',['Todo o tempo','A maior parte do tempo','Alguma parte do tempo','Uma pequena parte do tempo','Nenhuma parte do tempo']],
+ ...['Eu costumo adoecer um pouco mais facilmente que as outras pessoas','Eu sou tão saudável quanto qualquer pessoa que eu conheço','Eu acho que a minha saúde vai piorar','Minha saúde é excelente'].map(t=>['O quanto verdadeiro ou falso é: '+t+'?',RAND_TRUE])],
+ complete:a=>Object.values(RAND_GROUPS).every(g=>g.some(n=>Number.isInteger(a[n-1]))),
+ score:a=>{
+  const recoded=a.map((v,i)=>Number.isInteger(v)?RAND_MAPS[i][v]:null);
+  const domainCounts={};
+  const metrics=Object.entries(RAND_GROUPS).map(([name,indices])=>{const values=indices.map(n=>recoded[n-1]).filter(v=>v!==null);domainCounts[name]={answered:values.length,total:indices.length};return metric(name,sum(values)/values.length,100,'Maior = melhor estado de saúde',{answered:values.length,items:indices.length});});
+  return {metrics,calculation:{method:'RAND 1.0: recodificação item a item e média dos itens respondidos em cada domínio',recoded,domainCounts,healthChangeItem2:recoded[1],noGlobalScore:true},interpretation:'O item 2 descreve mudança de saúde e não integra os oito domínios. Não há score global RAND-36 nesta aplicação.'};
+ }
+},{version:'RAND36-1.0-BR-Ciconelli-LinsKusterer2022-v1',licenseStatus:'RAND_PERMISSION_NO_WRITTEN_LICENSE',minAnswered:8,source:'https://www.rand.org/health/surveys/mos/36-item-short-form/scoring.html',brazilSource:'https://doi.org/10.1590/S0004-2803.202202000-36',missing:'Média dos itens disponíveis por domínio, conforme RAND; exige ao menos um em cada domínio para liberar este relatório. Exibe n/total; nenhuma imputação. Item 2 não entra nos domínios.',note:'RAND Medical Outcomes Study; termos: https://www.rand.org/health/surveys/mos/36-item-short-form/terms.html. A apresentação em telas é uma transposição eletrônica; os testes computacionais não constituem nova validação psicométrica.'});
+CURRENT_VALIDATED_INSTRUMENTS.sf36.answerPolicy.allowNA=true;
+
+const WAI_DISEASES=['Lesão nas costas','Lesão nos braços/mãos','Lesão nas pernas/pés','Lesão em outras partes do corpo','Doença da parte superior das costas ou região do pescoço, com dores frequentes','Doença da parte inferior das costas com dores frequentes','Dor nas costas que se irradia para a perna (ciática)','Doença musculoesquelética afetando os membros (braços e pernas) com dores frequentes','Artrite reumatoide','Outra doença musculoesquelética','Hipertensão arterial (pressão alta)','Doença coronariana, dor no peito durante exercício (angina pectoris)','Infarto do miocárdio, trombose coronariana','Insuficiência cardíaca','Outra doença cardiovascular','Infecções repetidas do trato respiratório (incluindo amigdalite, sinusite aguda, bronquite aguda)','Bronquite crônica','Sinusite crônica','Asma','Enfisema','Tuberculose pulmonar','Outra doença respiratória','Distúrbio emocional severo (ex.: depressão severa)','Distúrbio emocional leve (ex.: depressão leve, tensão, ansiedade, insônia)','Problema ou diminuição da audição','Doença ou lesão da visão (não assinale se apenas usa óculos ou lentes de contato de grau)','Doença neurológica (AVC ou derrame, neuralgia, enxaqueca, epilepsia)','Outra doença neurológica ou dos órgãos dos sentidos','Pedras ou doença da vesícula biliar','Doença do pâncreas ou do fígado','Úlcera gástrica ou duodenal','Gastrite ou irritação duodenal','Colite ou irritação do cólon','Outra doença digestiva','Infecção das vias urinárias','Doença dos rins','Doença nos genitais e aparelho reprodutor (p. ex.: problema nas trompas ou na próstata)','Outra doença geniturinária','Alergia, eczema','Outra erupção','Outra doença da pele','Tumor benigno','Tumor maligno (câncer)','Obesidade','Diabetes','Bócio ou outra doença da tireoide','Outra doença endócrina ou metabólica','Anemia','Outra doença do sangue','Defeito de nascimento','Outro problema ou doença'];
+const WAI_DETAILS=[3,9,14,21,27,33,37,39,40,42,46,48,50];
+const WAI_IMPAIR=['Não há impedimento / Eu não tenho doenças','Eu sou capaz de fazer meu trabalho, mas ele me causa alguns sintomas','Algumas vezes preciso diminuir meu ritmo de trabalho ou mudar meus métodos de trabalho','Frequentemente preciso diminuir meu ritmo de trabalho ou mudar meus métodos de trabalho','Por causa de minha doença sinto-me capaz de trabalhar apenas em tempo parcial','Em minha opinião estou totalmente incapacitado para trabalhar'];
+register('ict',{
+ title:'ICT / WAI — Índice de Capacidade para o Trabalho',type:'sections',special:{4:'diseases',5:'multi'},
+ intro:'Responda sobre seu trabalho atual e sua saúde. A lista de doenças distingue sua opinião de diagnóstico médico. O índice é uma medida de capacidade autorreferida; não determina aptidão ou incapacidade laboral pericial automaticamente.',
+ data:[
+ ['Seu trabalho exige principalmente:',['Esforço mental','Esforço físico','Esforços físico e mental']],
+ ['Suponha que a sua melhor capacidade para o trabalho tem um valor igual a 10 pontos. Numa escala de zero a dez, quantos pontos você daria para a sua capacidade de trabalho atual?',numbers(10)],
+ ['Como você classificaria sua capacidade atual para o trabalho em relação às exigências físicas do seu trabalho? (Por exemplo, fazer esforço físico com partes do corpo).',['Muito baixa','Baixa','Moderada','Boa','Muito boa']],
+ ['Como você classificaria sua capacidade atual para o trabalho em relação às exigências mentais do seu trabalho? (Por exemplo, interpretar fatos, resolver problemas, decidir a melhor forma de fazer).',['Muito baixa','Baixa','Moderada','Boa','Muito boa']],
+ ['Em sua opinião quais das lesões por acidentes ou doenças citadas abaixo você possui ATUALMENTE? Marque também aquelas que foram confirmadas pelo médico.',[]],
+ ['Sua lesão ou doença é um impedimento para seu trabalho atual? Você pode marcar mais de uma resposta.',WAI_IMPAIR],
+ ['Quantos DIAS INTEIROS você esteve fora do trabalho devido a problema de saúde, consulta médica ou para fazer exame durante os últimos 12 meses?',['Nenhum','Até 9 dias','De 10 a 24 dias','De 25 a 99 dias','100 a 365 dias']],
+ ['Considerando sua saúde, você acha que será capaz de DAQUI A 2 ANOS fazer seu trabalho atual?',['É improvável','Não estou muito certo','Bastante provável']],
+ ['Você tem conseguido apreciar (se sentir satisfeito com) suas atividades diárias?',['Nunca','Raramente','Às vezes','Quase sempre','Sempre']],
+ ['Você tem se sentido ativo e alerta?',['Nunca','Raramente','Às vezes','Quase sempre','Sempre']],
+ ['Você tem se sentido cheio de esperança para o futuro?',['Nunca','Raramente','Às vezes','Quase sempre','Continuamente']]],
+ validateItem(i,v){
+  if(i===4) return !!v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).sort().join(',')==='details,entries'&&Array.isArray(v.entries)&&v.entries.length===51&&v.entries.every(n=>n===null||Number.isInteger(n)&&n>=0&&n<=3)&&!!v.details&&typeof v.details==='object'&&!Array.isArray(v.details)&&Object.entries(v.details).every(([k,t])=>WAI_DETAILS.includes(Number(k))&&String(Number(k))===k&&typeof t==='string'&&t.length<=1000);
+  if(i===5) return Array.isArray(v)&&new Set(v).size===v.length&&v.every(n=>Number.isInteger(n)&&n>=0&&n<6);
+  return Number.isInteger(v)&&v>=0&&v<this.data[i][1].length;
+ },
+ isItemComplete(i,v){
+  if(v===null||v===undefined) return false;
+  if(i===4) return v.entries.every(Number.isInteger)&&WAI_DETAILS.every(n=>v.entries[n]===0||!!v.details[n]?.trim());
+  if(i===5) return v.length>0;
+  return Number.isInteger(v);
+ },
+ complete(a){return a.every((v,i)=>this.isItemComplete(i,v));},
+ score:a=>{
+  const p=a[2]+1,m=a[3]+1,demands=a[0]===0?p*.5+m*1.5:a[0]===1?p*1.5+m*.5:p+m;
+  const diseases=a[4].entries.filter(v=>v>=2).length, diseasePoints=[7,5,4,3,2,1][Math.min(5,diseases)];
+  const impairment=6-Math.max(...a[5]),mental=sum(a.slice(8)),resources=mental<=3?1:mental<=6?2:mental<=9?3:4;
+  const beforeRounding=a[1]+demands+diseasePoints+impairment+(5-a[6])+[1,4,7][a[7]]+resources,raw=Math.round(beforeRounding);
+  return {metrics:[metric('ICT/WAI',raw,49,'Maior = melhor capacidade autorreferida para o trabalho')],calculation:{current:a[1],demands,diagnosedDiseases:diseases,diseasePoints,impairment,sickLeave:5-a[6],prognosis:[1,4,7][a[7]],mentalSum:mental,resources,beforeRounding,rounding:'Meio ponto arredondado para o inteiro superior'},interpretation:'Categoria histórica do ICT: '+(raw<=27?'baixa':raw<=36?'moderada':raw<=43?'boa':'ótima')+'. Não equivale a conclusão pericial de aptidão ou incapacidade.'};
+ }
+},{version:'ICT-BR-Tuomi-51diseases-WAI1998-v1',licenseStatus:'FIOH_OWN_OPERATIONS_PERMITTED',source:'https://www.ttl.fi/en/themes/well-being-at-work-and-work-ability/tyokyky/using-the-work-ability-index-wai',brazilSource:'https://doi.org/10.1590/S0034-89102009005000017',missing:'Exige todos os componentes, 51 marcações da lista e descrição das opções abertas assinaladas. Sem imputação.',note:'Tuomi et al.; versão brasileira reproduzida no anexo A de Castro (UFPE, 2017). Algoritmo do manual WAI 1998; só conta diagnósticos médicos. Uso próprio autorizado pelo FIOH; o método não pode ser vendido como tal.'});
+
+register('csi',{
+ title:'BP-CSI — Inventário de Sensibilização Central, parte A',type:'likert',
+ intro:'Os sintomas avaliados por este questionário se referem a sua presença diária ou na maioria dos dias dos últimos três meses. Selecione a melhor resposta para cada questão. Parte A: 25 itens; a parte B de diagnósticos não integra esta aplicação nem o escore.',
+ items:['Sinto-me cansado(a) ao acordar pela manhã.','Sinto que minha musculatura está enrijecida e dolorida.','Tenho crises de ansiedade.','Costumo apertar (ranger) os dentes.','Tenho diarreia e/ou prisão de ventre.','Preciso de ajuda para fazer as tarefas diárias.','Sou sensível à luminosidade excessiva.','Canso-me facilmente ao realizar atividades diárias que exigem algum esforço físico.','Sinto dor em todo o corpo.','Tenho dores de cabeça.','Sinto desconforto e/ou ardência ao urinar.','Durmo mal.','Tenho dificuldade para me concentrar.','Tenho problemas de pele como ressecamento, coceira e vermelhidão.','O estresse piora meus sintomas.','Me sinto triste ou deprimido(a).','Tenho pouca energia.','Tenho tensão muscular no pescoço e nos ombros.','Tenho dor no queixo.','Fico enjoado(a) e tonto(a) com cheiros como o de perfumes.','Preciso urinar frequentemente.','Quando vou dormir à noite sinto minhas pernas inquietas e desconfortáveis.','Tenho dificuldade para me lembrar das coisas.','Sofri trauma emocional na infância.','Tenho dor na região pélvica.'],
+ opts:['Nunca','Raramente','Às vezes','Frequentemente','Sempre'],
+ score:a=>({metrics:[metric('BP-CSI — parte A',sum(a),100,'Maior = maior carga de sintomas autorreferidos')],calculation:{sum:sum(a),denominator:100},interpretation:'O escore não estabelece mecanismo de dor nem diagnóstico de sensibilização central isoladamente.'})
+},{version:'BP-CSI-Caumo2017-PartA25-v1',licenseStatus:'AUTHOR_DISTRIBUTED_FORM',source:'https://frius.com/questionnaires/',brazilSource:'https://doi.org/10.2147/JPR.S131479',missing:'25/25; sem imputação.',note:'Formulário brasileiro disponibilizado pelo grupo desenvolvedor FRIUS; Caumo et al., UFRGS/HCPA. Sem reprodução da parte B ou classificação diagnóstica automática.'});
+
+register('spadi',{
+ title:'SPADI-Brasil — Índice de Dor e Incapacidade do Ombro',type:'likert',
+ about:'Sobre dor e dificuldade no ombro afetado, na semana passada.',
+ intro:'Pense apenas na SEMANA PASSADA e no seu braço/ombro afetado. Dê uma nota de 0 a 10 para cada pergunta. Use "não se aplica" somente se a atividade não faz parte da sua rotina; se você só não fez por acaso, estime a nota que daria.',
+ items:['Qual a intensidade da sua dor quando foi a pior na semana passada?','Durante a semana passada, qual a gravidade da sua dor quando se deitou em cima do braço afetado?','Durante a semana passada, qual a gravidade da sua dor quando tentou pegar algo em uma prateleira alta com o braço afetado?','Durante a semana passada, qual a gravidade da sua dor quando tentou tocar a parte de trás do pescoço com o braço afetado?','Durante a semana passada, qual a gravidade da sua dor quando tentou empurrar algo com o braço afetado?','Durante a semana passada, qual o grau de dificuldade que você teve para lavar seu cabelo com o braço afetado?','Durante a semana passada, qual o grau de dificuldade que você teve para lavar suas costas com o braço afetado?','Durante a semana passada, qual o grau de dificuldade que você teve para vestir uma camiseta ou blusa pela cabeça?','Durante a semana passada, qual o grau de dificuldade que você teve para vestir uma camisa que abotoa na frente?','Durante a semana passada, qual o grau de dificuldade que você teve para vestir suas calças?','Durante a semana passada, qual o grau de dificuldade que você teve para colocar algo em uma prateleira alta com o braço afetado?','Durante a semana passada, qual o grau de dificuldade que você teve para carregar um objeto pesado de 5kg (saco grande de arroz) com o braço afetado?','Durante a semana passada, qual o grau de dificuldade que você teve para retirar algo de seu bolso de trás com o braço afetado?'],
+ optsPerItem:[...Array(5).fill(['0 — Sem dor','1','2','3','4','5','6','7','8','9','10 — Pior dor imaginável']),...Array(8).fill(['0 — Sem dificuldade','1','2','3','4','5','6','7','8','9','10 — Não conseguiu fazer'])],
+ complete:a=>a.every(v=>Number.isInteger(v)||v==='NA')&&a.slice(0,5).some(Number.isInteger)&&a.slice(5).some(Number.isInteger),
+ score:a=>{
+  const part=(arr)=>{const v=arr.filter(Number.isInteger);return {sum:sum(v),max:v.length*10,na:arr.length-v.length};};
+  const d=part(a.slice(0,5)),i=part(a.slice(5)),t=part(a);
+  const pct=x=>x.sum/x.max*100;
+  return {metrics:[metric('SPADI — dor',pct(d),100,'Maior = pior (0–100%)',{answered:5-d.na,items:5}),metric('SPADI — incapacidade',pct(i),100,'Maior = pior (0–100%)',{answered:8-i.na,items:8}),metric('SPADI — total',pct(t),100,'Maior = pior (0–100%)',{answered:13-t.na,items:13})],
+   calculation:{painSum:d.sum,painMax:d.max,disabilitySum:i.sum,disabilityMax:i.max,totalSum:t.sum,totalMax:t.max,formula:'Soma dos itens ÷ pontuação máxima possível × 100, em cada escala e no total; itens "não se aplica" saem do máximo possível (instrução da versão brasileira).'},
+   interpretation:'Sem faixas oficiais de gravidade. Os autores da versão brasileira desaconselham interpretar itens isolados; usar as escalas e o total.'};}
+},{version:'SPADI-Brasil-Martins2010-v1',licenseStatus:'CC_BY_NC_ARTICLE',source:'https://doi.org/10.1016/0739-4117(91)90019-S',brazilSource:'https://doi.org/10.1590/S1413-35552010000600012',missing:'Todos os 13 itens com nota ou "não se aplica"; cada escala precisa de pelo menos um item com nota.',minAnswered:0,note:'Itens exatos da versão brasileira (Martins et al., 2010, Rev Bras Fisioter, artigo aberto CC BY-NC). A licença CC BY-NC permite reprodução com atribuição e sem finalidade comercial. Os autores validaram a aplicação por entrevista; no autopreenchimento, a instrução sobre "semana passada" e "não se aplica" foi reforçada.'});
+CURRENT_VALIDATED_INSTRUMENTS.spadi.answerPolicy.allowNA=true;
+
+register('whodas',{
+ title:'WHODAS 2.0 — versão de 12 itens, auto-administrada',type:'likert',
+ about:'Sobre dificuldades nas suas atividades por causa da sua saúde, nos últimos 30 dias.',
+ intro:'Este questionário pergunta sobre dificuldades decorrentes de condições de saúde. Condições de saúde incluem doenças ou enfermidades, outros problemas de saúde de curta ou longa duração, lesões, problemas mentais ou emocionais, e problemas com álcool ou drogas. Pense nos últimos 30 dias e responda as questões, pensando sobre quanta dificuldade você tem nas atividades a seguir. Para cada questão, por favor, marque uma resposta.',
+ items:['Nos últimos 30 dias, quanta dificuldade você teve em: ficar em pé por longos períodos como 30 minutos?','Nos últimos 30 dias, quanta dificuldade você teve em: cuidar das suas responsabilidades domésticas?','Nos últimos 30 dias, quanta dificuldade você teve em: aprender uma nova tarefa, por exemplo, como chegar a um lugar desconhecido?','Nos últimos 30 dias, quanta dificuldade você teve ao participar em atividades comunitárias (por exemplo, festividades, atividades religiosas ou outra atividade) do mesmo modo que qualquer outra pessoa?','Nos últimos 30 dias, quanto você tem sido emocionalmente afetado por seus problemas de saúde?','Nos últimos 30 dias, quanta dificuldade você teve em: concentrar-se para fazer alguma coisa durante dez minutos?','Nos últimos 30 dias, quanta dificuldade você teve em: andar por longas distâncias como por 1 quilômetro?','Nos últimos 30 dias, quanta dificuldade você teve em: lavar seu corpo inteiro?','Nos últimos 30 dias, quanta dificuldade você teve em: vestir-se?','Nos últimos 30 dias, quanta dificuldade você teve em: lidar com pessoas que você não conhece?','Nos últimos 30 dias, quanta dificuldade você teve em: manter uma amizade?','Nos últimos 30 dias, quanta dificuldade você teve em: seu dia-a-dia no trabalho?'],
+ opts:['Nenhuma','Leve','Moderada','Grave','Extrema ou não consegue fazer'],
+ complete:a=>a.filter(v=>v===null).length<=1,
+ score:a=>{
+  const answered=a.filter(Number.isInteger).map(v=>v+1);
+  const missing=a.length-answered.length;
+  const mean=answered.reduce((s,v)=>s+v,0)/answered.length;
+  const total=answered.reduce((s,v)=>s+v,0)+(missing?mean:0);
+  return {metrics:[metric('WHODAS 2.0 (12 itens) — pontuação simples',total,60,'Maior = maior dificuldade (mínimo 12)',{min:12,answered:answered.length,items:12})],
+   calculation:{sum:answered.reduce((s,v)=>s+v,0),imputedItems:missing,imputedValue:missing?mean:null,formula:'Soma dos 12 itens (Nenhuma=1 … Extrema=5); com 1 item em branco, ele recebe a média dos outros 11 (regra do manual da OMS). Com 2 ou mais em branco, não há escore.'},
+   interpretation:'Pontuação simples do manual da OMS (12–60). O próprio manual adverte que a pontuação simples é específica da amostra e não deve ser comparada entre populações; não há faixas oficiais de gravidade para ela. A pontuação complexa (0–100, baseada em teoria de resposta ao item) não é calculada aqui.'};}
+},{version:'WHODAS2-12itens-auto-OMS-UFTM2015-v1',licenseStatus:'WHO_OFFICIAL_PT_BR_MANUAL',source:'https://www.who.int/standards/classifications/international-classification-of-functioning-disability-and-health/who-disability-assessment-schedule',brazilSource:'ISBN 978-85-62599-51-4 (OMS/UFTM, 2015)',missing:'No máximo 1 item em branco (imputado pela média dos demais); 2 ou mais em branco = sem escore.',minAnswered:11,note:'Texto da versão de 12 itens auto-administrada do manual oficial em português (OMS 2010; tradução autorizada UFTM, Castro & Leite, 2015). As perguntas H1–H3 (número de dias), que não entram no escore, não foram incluídas. A OMS pede solicitação de permissão (permissions@who.int) para reprodução.'});
+
+register('phq9',{
+ title:'PHQ-9 — Questionário sobre a Saúde do Paciente (depressão)',type:'likert',
+ about:'Sobre como você tem se sentido emocionalmente nas últimas duas semanas.',
+ intro:'Durante as duas últimas semanas, com que frequência você foi incomodado/a por qualquer um dos problemas abaixo?',
+ items:['Pouco interesse ou pouco prazer em fazer as coisas','Se sentir “para baixo”, deprimido/a ou sem perspectiva','Dificuldade para pegar no sono ou permanecer dormindo, ou dormir mais do que de costume','Se sentir cansado/a ou com pouca energia','Falta de apetite ou comendo demais','Se sentir mal consigo mesmo/a — ou achar que você é um fracasso ou que decepcionou sua família ou você mesmo/a','Dificuldade para se concentrar nas coisas, como ler o jornal ou ver televisão','Lentidão para se movimentar ou falar, a ponto das outras pessoas perceberem? Ou o oposto – estar tão agitado/a ou irrequieto/a que você fica andando de um lado para o outro muito mais do que de costume','Pensar em se ferir de alguma maneira ou que seria melhor estar morto/a'],
+ opts:["Nenhuma vez", "Vários dias", "Mais da metade dos dias", "Quase todos os dias"],
+ score:a=>{const s=sum(a);const band=s<=4?'sintomas mínimos (0–4)':s<=9?'sintomas leves (5–9)':s<=14?'sintomas moderados (10–14)':s<=19?'sintomas moderadamente graves (15–19)':'sintomas graves (20–27)';
+  return {metrics:[metric('PHQ-9',s,27,'Maior = maior intensidade de sintomas depressivos')],calculation:{sum:s,formula:'Soma dos 9 itens (0–3 cada)',denominator:27},
+   interpretation:'Faixa descrita pelos autores (Kroenke et al., 2001): '+band+'. Instrumento de rastreio; não estabelece diagnóstico isoladamente.'+(a[8]>0?' ATENÇÃO: item 9 (pensamentos de se ferir ou de morte) respondido acima de zero — requer avaliação clínica direta e orientação de busca de cuidado em saúde mental.':'')};}
+},{version:'PHQ9-ptBR-Pfizer-Santos2013-v1',licenseStatus:'PUBLIC_DOMAIN',source:'https://www.phqscreeners.com',brazilSource:'https://doi.org/10.1590/0102-311X00144612',missing:'9/9; sem imputação.',note:'Domínio público: os autores/Pfizer dispensam permissão para reproduzir, traduzir e exibir. Versão brasileira validada por Santos et al. (2013). A 10ª pergunta (impacto funcional), que não entra no escore, não foi incluída.'});
+
+register('gad7',{
+ title:'GAD-7 — Escala de Ansiedade Generalizada',type:'likert',
+ about:'Sobre preocupação e ansiedade nas últimas duas semanas.',
+ intro:'Durante as duas últimas semanas, com que frequência você foi incomodado/a por qualquer um dos problemas abaixo?',
+ items:['Sentir-se nervoso, ansioso ou no limite','Não ser capaz de parar ou controlar a preocupação','Preocupar-se muito com coisas diferentes','Problemas para relaxar','Sentir-se tão inquieto a ponto de ser difícil ficar parado','Tornar-se facilmente aborrecido ou irritado','Sentir medo, como se algo terrível pudesse acontecer'],
+ opts:["Nenhuma vez", "Vários dias", "Mais da metade dos dias", "Quase todos os dias"],
+ score:a=>{const s=sum(a);const band=s<=4?'sintomas mínimos (0–4)':s<=9?'sintomas leves (5–9)':s<=14?'sintomas moderados (10–14)':'sintomas graves (15–21)';
+  return {metrics:[metric('GAD-7',s,21,'Maior = maior intensidade de sintomas ansiosos')],calculation:{sum:s,formula:'Soma dos 7 itens (0–3 cada)',denominator:21},
+   interpretation:'Faixa descrita pelos autores (Spitzer et al., 2006): '+band+'. Ponto de corte de rastreio positivo proposto pelos autores: ≥10. Instrumento de rastreio; não estabelece diagnóstico isoladamente.'};}
+},{version:'GAD7-ptBR-Pfizer-Moreno2016-v1',licenseStatus:'PUBLIC_DOMAIN',source:'https://www.phqscreeners.com',brazilSource:'https://doi.org/10.9788/TP2016.1-25',missing:'7/7; sem imputação.',note:'Domínio público: os autores/Pfizer dispensam permissão para reproduzir, traduzir e exibir. Versão brasileira estudada por Moreno et al. (2016). A 8ª pergunta (impacto funcional), que não entra no escore, não foi incluída.'});
+
+register('tsk13',{
+ title:'TSK-13 Brasil — Escala Tampa de Cinesiofobia',type:'likert',
+ intro:'Indique o quanto você concorda com cada afirmação. Versão de 13 itens; a evidência brasileira específica citada para esta versão foi obtida em adultos com enxaqueca.',
+ items:['Tenho medo de me machucar, se eu fizer exercícios.','Se eu tentasse superar esse medo, minha dor aumentaria.','Meu corpo está dizendo que alguma coisa muito errada está acontecendo comigo.','As pessoas não estão levando minha condição médica a sério.','A lesão colocou meu corpo em risco para o resto da minha vida.','A dor sempre significa que o meu corpo está machucado.','Tenho medo de que eu possa me machucar acidentalmente.','A atitude mais segura que posso tomar para prevenir a piora da minha dor é, simplesmente, ser cuidadoso para não fazer nenhum movimento desnecessário.','Eu não teria tanta dor se algo realmente perigoso não estivesse acontecendo no meu corpo.','A dor me avisa quando devo parar o exercício para eu não me machucar.','Não é realmente seguro para uma pessoa, com problemas iguais aos meus, ser ativo fisicamente.','Não posso fazer todas as coisas que as pessoas normais fazem, pois me machuco facilmente.','Ninguém deveria fazer exercícios, quando está com dor.'],
+ opts:['Discordo totalmente','Discordo parcialmente','Concordo parcialmente','Concordo totalmente'],
+ score:a=>({metrics:[metric('TSK-13',sum(a)+13,52,'Maior = maior medo do movimento',{min:13})],calculation:{originalItemNumbers:[1,2,3,5,6,7,9,10,11,13,14,15,17],reversedItems:[],formula:'Soma de 13 respostas recodificadas para 1–4'},interpretation:'Sem ponto de corte universal. A versão de 13 itens exclui os quatro itens reversos da TSK-17.'})
+},{version:'TSK13-BR-Siqueira2007-migraine2024-v1',licenseStatus:'PUBLISHED_CC_BY_FORM',source:'https://doi.org/10.1590/S1413-78522007000100004',brazilSource:'https://pmc.ncbi.nlm.nih.gov/articles/PMC11327810/',missing:'13/13; sem imputação.',note:'Texto brasileiro de Siqueira et al.; seleção de 13 itens conforme estudo de 2024 em enxaqueca. Não extrapolar a validade para toda população pericial.'});
+
+register('dn4',{
+ title:'DN4-interview — 7 itens',type:'yesno',
+ intro:'Responda sobre a mesma região dolorosa em todas as questões. Os três primeiros itens descrevem características da dor; os quatro últimos, sintomas associados nessa região. Esta aplicação não inclui exame sensitivo.',
+ items:['A sua dor tem a característica: queimação?','A sua dor tem a característica: sensação de frio dolorosa?','A sua dor tem a característica: choque elétrico?','Há formigamento na mesma região da dor?','Há alfinetada e agulhada na mesma região da dor?','Há dormência na mesma região da dor?','Há coceira na mesma região da dor?'],
+ score:a=>({metrics:[metric('DN4-interview',sum(a),7,'Maior = mais descritores neuropáticos')],calculation:{positiveAnswers:sum(a),cutoff:3},interpretation:sum(a)>=3?'Resultado sugestivo de componente neuropático (≥ 3/7); não estabelece diagnóstico.':'Abaixo do ponto de corte de 3/7; não exclui componente neuropático.'})
+},{version:'DN4i-BR-7-fracture2024-v1',licenseStatus:'CLINICAL_TOOL_SFETD',source:'https://www.sfetd-douleur.org/outils-specifiques/',brazilSource:'https://doi.org/10.1055/s-0044-1779686',missing:'7/7; sem imputação.',note:'DN4i: apenas entrevista, sem os três itens de exame do DN4 completo. Estudo brasileiro de 2024 após cirurgia de fratura; não confundir corte ≥3/7 com ≥4/10.'});
+
+const WIQ_WEIGHTS=[[20,50,150,300,600,900,1500],[1.5,2,3,5],[12,24,36]];
+register('wiq',{
+ title:'WIQ Brasil — distância, velocidade e escadas',type:'likert',
+ intro:'Informe o grau de dificuldade no último mês. Nas questões de distância, considere superfície plana, sem parar para descansar. Nas questões de velocidade, considere caminhar um quarteirão. Nas questões de escadas, considere subir sem parar para descansar. Esta aplicação contém os 14 itens dos três domínios funcionais pontuados.',
+ items:['Caminhar em lugares fechados, como dentro de casa?','Caminhar 5 metros?','Caminhar 45 metros (meio quarteirão)?','Caminhar 90 metros (um quarteirão)?','Caminhar 180 metros (dois quarteirões)?','Caminhar 270 metros (três quarteirões)?','Caminhar 450 metros (cinco quarteirões)?','Caminhar um quarteirão lentamente (2,4 km/h)?','Caminhar um quarteirão em velocidade média (3,2 km/h)?','Caminhar um quarteirão rapidamente (4,8 km/h)?','Correr um quarteirão (8 km/h)?','Subir um lance de escada (8 degraus)?','Subir dois lances de escada (16 degraus)?','Subir três lances de escada (24 degraus)?'],
+ opts:['Nenhuma','Leve','Razoável','Muita','Incapaz'],
+ score:a=>{
+  const groups=[a.slice(0,7),a.slice(7,11),a.slice(11,14)],names=['WIQ distância','WIQ velocidade','WIQ escadas'];
+  const numerators=groups.map((g,d)=>sum(g.map((v,i)=>(4-v)*WIQ_WEIGHTS[d][i]))),denominators=WIQ_WEIGHTS.map(w=>4*sum(w));
+  return {metrics:numerators.map((v,i)=>metric(names[i],v/denominators[i]*100,100,'Maior = melhor capacidade de marcha')),calculation:{numerators,denominators,weights:WIQ_WEIGHTS,noGlobalScore:true}};
+ }
+},{version:'WIQ-BR-RittiDias2009-functional14-v1',licenseStatus:'PUBLISHED_CC_BY_FORM',source:'https://doi.org/10.1590/S0066-782X2009000200011',brazilSource:'https://doi.org/10.1590/S0066-782X2009000200011',missing:'14/14 nos domínios funcionais; sem imputação.',note:'Preserva as distâncias publicadas na versão brasileira, inclusive 5 m no segundo item. Não inclui o bloco descritivo de diagnóstico diferencial; não produz total WIQ.'});
+
+const NMQ_FIELDS={y12:'Nos últimos 12 meses, você teve problemas (como dor, formigamento/dormência) nesta região?',impede:'Nos últimos 12 meses, você foi impedido(a) de realizar atividades normais (por exemplo: trabalho, atividades domésticas e de lazer) por causa desse problema nesta região?',care:'Nos últimos 12 meses, você consultou algum profissional da área da saúde (médico, fisioterapeuta) por causa dessa condição nesta região?',y7:'Nos últimos 7 dias, você teve algum problema nesta região?'};
+register('nmq',{
+ title:'QNSO / NMQ — sintomas por região',type:'nmq',
+ intro:'Responda às quatro perguntas para cada região do corpo. Considere os períodos indicados em cada pergunta. O questionário não gera score global nem diagnóstico.',
+ items:['Pescoço','Ombros','Parte superior das costas','Cotovelos','Punhos/mãos','Parte inferior das costas','Quadris/coxas','Joelhos','Tornozelos/pés'],
+ validateItem:(i,v)=>!!v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).sort().join(',')==='care,impede,y12,y7'&&Object.keys(NMQ_FIELDS).every(f=>v[f]===null||v[f]===0||v[f]===1),
+ isItemComplete:(i,v)=>!!v&&Object.keys(NMQ_FIELDS).every(f=>v[f]===0||v[f]===1),
+ complete(a){return a.every((v,i)=>this.isItemComplete(i,v));},
+ score:a=>({metrics:[],calculation:{noGlobalScore:true,regions:cloneAnswers(a)},interpretation:'Resultado por região e período, sem soma global.'})
+},{version:'NMQ-BR-BarrosAlexandre2003-9x4-v1',licenseStatus:'PUBLISHED_ACADEMIC_CLINICAL_FORM',source:'https://doi.org/10.1016/0003-6870(87)90010-X',brazilSource:'https://doi.org/10.1046/j.1466-7657.2003.00188.x',missing:'Exige quatro respostas explícitas por região; ausências não são convertidas em Não.',note:'Versão brasileira de nove regiões e quatro questões. Não confundir com o agrupamento de sete regiões de Pinheiro et al. (2002).'});
+
+register('chalder',{
+ title:'CFQ-11 Brasil — Chalder (bimodal)',type:'likert',
+ intro:'Gostaríamos de saber se você tem tido algum problema de cansaço, fraqueza ou falta de energia NO ÚLTIMO MÊS. Se você vem se sentindo cansado há muito tempo, compare seu estado atual com a última vez que se sentiu bem.',
+ items:['Você tem problema de cansaço ou fraqueza?','Você precisa descansar mais?','Você se sente sonolento?','Você tem dificuldade para começar suas atividades?','Você sente falta de energia?','Você está com pouca força muscular?','Você se sente fraco?','Você tem dificuldade para se concentrar?','Você troca as palavras sem querer quando está falando?','Você acha difícil encontrar as palavras certas?','Como está sua memória?'],
+ optsPerItem:Array.from({length:11},(_,i)=>[5,10].includes(i)?['Melhor que de costume','Como de costume','Pior que de costume','Muito pior que de costume']:['Menos que de costume','Como de costume','Mais que de costume','Muito mais que de costume']),
+ score:a=>({metrics:[metric('CFQ-11 — bimodal',sum(a.map(v=>v>=2?1:0)),11,'Maior = mais sintomas de fadiga')],calculation:{recoding:[0,0,1,1],cutoff:4,method:'Bimodal; não é a soma Likert 0–33'},interpretation:sum(a.map(v=>v>=2?1:0))>=4?'≥4/11: rastreio positivo para fadiga substancial no contexto de atenção primária estudado por Cho et al.; não diagnostica síndrome de fadiga crônica.':'<4/11: abaixo do ponto de corte de Cho et al. para atenção primária; não exclui doença.'})
+},{version:'CFQ11-BR-Cho2007-bimodal-v1',licenseStatus:'FREE_USE_ACR_REVIEW',source:'https://www.researchgate.net/publication/276206042_Brazilian_Portuguese_Version_of_Chalder_Fatigue_Questionnaire',brazilSource:'https://doi.org/10.1016/j.jpsychores.2006.10.018',missing:'11/11; sem imputação.',note:'Formulário disponibilizado pelo autor Joshua Hyong-Jin Cho. Escore dos 11 itens de fadiga, sem questões complementares de mialgia/duração. Uso gratuito descrito em doi:10.1002/acr.24246; não afirma domínio público.'});
+register('comi',{
+ title:'COMI lombar — português brasileiro',type:'sections',
+ intro:'Problemas de coluna podem levar a dor nas costas e/ou nas pernas e nádegas, assim como distúrbios sensoriais tais como formigamento, pontadas ou dormência nessas regiões. Observe o período indicado: uma semana para dor/função/qualidade de vida e quatro semanas para restrição de atividades. Escalas de dor: 0 = sem dor; 10 = a pior dor que você pode imaginar.',
+ data:[
+ ['Qual dos seguintes problemas o incomoda mais?',['Dor nas costas','Dor na perna/nádega','Distúrbios sensoriais nas costas, pernas ou nádegas (formigamento, pontadas, dormência)','Nenhuma das acima']],
+ ['Quão severa foi a sua dor nas costas na semana passada?',numbers(10)],
+ ['Quão severa foi a sua dor na perna na semana passada?',numbers(10)],
+ ['Durante a semana passada, quanto o seu problema nas costas interferiu no seu trabalho normal (incluindo trabalho fora de casa e as atividades domésticas)?',['Não interferiu','Um pouco','Moderadamente','Muito','Extremamente']],
+ ['Se você tivesse que passar o resto da sua vida com os sintomas que você tem agora, como você se sentiria a respeito?',['Muito satisfeito','Um pouco satisfeito','Nem satisfeito, nem insatisfeito','Um pouco insatisfeito','Muito insatisfeito']],
+ ['Por favor, pense sobre a semana passada. Como você avaliaria a sua qualidade de vida?',['Muito boa','Boa','Moderada','Ruim','Muito ruim']],
+ ['Durante as últimas quatro semanas, em quantos dias você diminuiu as atividades que você geralmente faz (trabalho, tarefas domésticas, escola, lazer) por causa do seu problema nas costas?',['Nenhum','Entre 1 e 7 dias','Entre 8 e 14 dias','Entre 15 e 21 dias','Mais do que 21 dias']],
+ ['Durante as últimas quatro semanas, por quantos dias o seu problema nas costas lhe impediu de fazer algo (trabalho, escola, tarefas domésticas)?',['Nenhum','Entre 1 e 7 dias','Entre 8 e 14 dias','Entre 15 e 21 dias','Mais do que 21 dias']]],
+ score:a=>{
+  const domains=[Math.max(a[1],a[2]),a[3]*2.5,a[4]*2.5,a[5]*2.5,(a[6]+a[7])*1.25];
+  return {metrics:[metric('COMI lombar',sum(domains)/5,10,'Maior = maior impacto dos problemas lombares')],calculation:{domains,denominator:5,pain:'Máximo entre dor nas costas e perna',disability:'Média dos dois itens de restrição, após recodificação 0–10',excluded:[1]},interpretation:'Sem categorias universais de gravidade. Não equivale a incapacidade laboral.'};
+ }
+},{version:'COMI-back-BR-Damasceno2012-SpineTango-v1',licenseStatus:'EUROSPINE_CLINICAL_DOWNLOAD',source:'https://www.eurospine.org/quality-assurance/spine-tango-registry/faq-and-resources/clinical-forms/',brazilSource:'https://doi.org/10.1007/s00586-011-2100-3',missing:'Todos os sete itens pontuados mais o item descritivo inicial; sem normalização de formulário incompleto.',note:'Formulário de autoavaliação COMI lombar 2012, distribuído pela EUROSPINE para prática clínica. Sete itens pontuados em cinco domínios, mais o item descritivo 1; exclui perguntas pós-tratamento. © MEMdoc 2012.'});
+
+const OREBRO_RANGE=(low,high)=>numbers(10).map((v,i)=>i===0?'0 — '+low:i===10?'10 — '+high:v);
+register('orebro',{
+ title:'ÖMPSQ-short Brasil — Örebro, 10 itens',type:'sections',
+ intro:'Estas perguntas e afirmações se aplicam se você tem queixas ou dores na coluna, ombros ou pescoço. Leia e responda cada questão com cuidado. Responda todas as questões. Observe os períodos e os extremos de cada escala. O questionário deve ser discutido com o profissional, item por item.',
+ data:[
+ ['Há quanto tempo você vem apresentando essa dor?',['0–1 semanas','2–3 semanas','4–5 semanas','6–7 semanas','8–9 semanas','10–11 semanas','12–23 semanas','24–35 semanas','36–52 semanas','Mais de 52 semanas']],
+ ['Como você classificaria a dor que você tem tido durante a última semana?',OREBRO_RANGE('sem dor','pior possível')],
+ ['Eu posso realizar trabalho leve por uma hora.',OREBRO_RANGE('não posso realizar por causa da dor','posso realizar, pois a dor não me atrapalha')],
+ ['Eu consigo dormir à noite.',OREBRO_RANGE('não posso realizar por causa da dor','posso realizar, pois a dor não me atrapalha')],
+ ['Qual o nível de estresse ou ansiedade você sentiu na semana passada?',OREBRO_RANGE('totalmente calmo e relaxado','estressado e ansioso como eu nunca havia me sentido')],
+ ['Quanto vem lhe incomodando o fato de estar se sentindo deprimido na semana passada?',OREBRO_RANGE('nem um pouco','extremamente')],
+ ['Na sua opinião, qual o risco da sua atual dor se tornar persistente?',OREBRO_RANGE('sem risco','risco muito alto')],
+ ['Em sua estimativa, quais são as chances de que você estará apto a trabalhar em três meses?',OREBRO_RANGE('sem chance','chance muito grande')],
+ ['Um aumento da dor é um sinal de que eu deveria parar de fazer o que eu estou fazendo até que a dor diminua.',OREBRO_RANGE('discordo completamente','concordo completamente')],
+ ['Eu não deveria realizar minhas atividades normais, inclusive trabalhar, com a minha dor atual.',OREBRO_RANGE('discordo completamente','concordo completamente')]],
+ score:a=>{
+  const recoded=a.map((v,i)=>i===0?v+1:[2,3,7].includes(i)?10-v:v),raw=sum(recoded);
+  return {metrics:[metric('ÖMPSQ-short',raw,100,'Maior = maior risco prognóstico estimado',{min:1})],calculation:{recoded,reversedItems:[3,4,8],durationScoring:'Categorias 1–10',cutoff:'>50'},interpretation:(raw>50?'Acima de 50: maior risco estimado.':'De 1 a 50: menor risco estimado.')+' Classificação de triagem, com possibilidade de falsos positivos e negativos; não determina incapacidade ou afastamento individual.'};
+ }
+},{version:'OMPSQ-short-BR-Fagundes2015-10-v1',licenseStatus:'OWNER_FREE_CLINICAL_COPIES',source:'https://www.oru.se/english/research/research-environments/hs/champ/questionnaires/',brazilSource:'https://doi.org/10.1007/s11136-015-0998-3',missing:'10/10; nenhuma normalização ou imputação.',note:'Fagundes et al., 2015. Formulário brasileiro conferido no apêndice de Silva (UNESP, 2019), p. 74 do PDF: https://repositorio.unesp.br/server/api/core/bitstreams/d07f3ee2-9684-4125-b689-de0a58974141/content . Preserva categorias de duração brasileiras e prognóstico de três meses. Permissão de cópias clínicas: FAQ de Steven Linton/Örebro University. Apresentação eletrônica; respostas individuais sempre disponíveis ao profissional.'});
+
+
+/* Exigências específicas não afetam os formulários habilitados.
+   Habilitar outro instrumento exige registrar sua versão/formulário e testes,
+   não apenas alterar uma flag. Não há chave de licença fictícia. */
+const INSTRUMENT_REQUIREMENTS={
+ odi:['LICENSE_REQUIRED','ODI 2.0 brasileiro, 10 seções','https://eprovide.mapi-trust.org/instruments/oswestry-disability-index','https://pubmed.ncbi.nlm.nih.gov/17304141/','Obter autorização de incorporação eletrônica e a versão brasileira correspondente. Não substituir silenciosamente a versão 2.0 validada pela 2.1b.'],
+ ndi:['LICENSE_REQUIRED','NDI brasileiro, 10 itens','https://eprovide.mapi-trust.org/instruments/neck-disability-index','https://doi.org/10.1097/01.brs.0000221989.53069.16','A incorporação em software depende da autorização do titular/MAPI; uso clínico de cópia não autoriza presumir distribuição eletrônica.'],
+ quickdash:['LICENSE_REQUIRED','QuickDASH Brasil, 11 itens','https://dash.iwh.on.ca/faq','https://doi.org/10.1590/1413-785220182601179785','O IWH solicita contato para incorporação em prontuário/software. Obter a autorização aplicável; formulário e algoritmo são distintos da versão legada.'],
+ whodas:['LICENSE_REQUIRED','WHODAS 2.0, 12 itens; simple scoring','https://www.who.int/classifications/international-classification-of-functioning-disability-and-health/who-disability-assessment-schedule','https://pmc.ncbi.nlm.nih.gov/articles/PMC6001571/','A OMS exige licença para reprodução eletrônica/software. A forma antiga sem o item de concentração não pode ser reutilizada.'],
+ pcs:['LICENSE_REQUIRED','BP-PCS, 13 itens','https://www.phenxtoolkit.org/protocols/view/860201','https://doi.org/10.1111/j.1526-4637.2012.01492.x','Protocolo PhenX indica autorização obrigatória via MAPI. Obter a licença e o formulário brasileiro autorizado.'],
+ fiqr:['UNAVAILABLE','FIQR Brasil, 21 itens','https://eprovide.mapi-trust.org/instruments/revised-fibromyalgia-impact-questionnaire','https://doi.org/10.1080/09638288.2016.1207106','FIQR é gratuito para uso clínico/acadêmico; a obtenção de traduções é direcionada à MAPI. Não foi obtido o formulário brasileiro autorizado correspondente à validação citada. Não se presume exigência de licença paga.'],
+ hoos:['UNAVAILABLE','HOOS completo, 40 itens','https://eprovide.mapi-trust.org/instruments/hip-disability-and-osteoarthritis-outcome-score','https://doi.org/10.1055/s-0039-1691764','Distribuição transferida para MAPI em 2023, com condições atualizadas. Não foi possível acessar o texto dessas condições nem o formulário brasileiro distribuído atualmente; não se afirma aqui exigência comprovada de licença. Os itens abreviados antigos não constituem HOOS.'],
+ koos:['LICENSE_REQUIRED','KOOS completo, 42 itens','https://www.koos.nu/faq.html','https://doi.org/10.1007/s00167-022-06911-w','O titular exige permissão para uso, também em versão eletrônica, via MAPI. Obter a tradução brasileira licenciada; não usar redução própria.'],
+ psqi:['LICENSE_REQUIRED','PSQI-BR, 19 itens autorrespondidos','https://www.sleep.pitt.edu/psqi','https://doi.org/10.1016/j.sleep.2010.04.020','University of Pittsburgh exige solicitação para qualquer uso; uso clínico/comercial tem condições próprias. Não reutilizar o resumo legado de sete perguntas.'],
+ hit6:['LICENSE_REQUIRED','HIT-6 Brasil, 6 itens','https://www.qualitymetric.com/wp-content/uploads/2023/11/QM_HIT-6_Guide_Final.pdf','https://doi.org/10.1111/head.14049','QualityMetric exige licença, inclusive clínica. Obter autorização para apresentação eletrônica do formulário brasileiro.'],
+ hads:['LICENSE_REQUIRED','HADS brasileira, 14 itens','https://www.gl-education.com/products/hospital-anxiety-depression-scale/','https://doi.org/10.1590/S0004-282X1995000300004','Formulários protegidos; reprodução exige permissão da GL. Alternativas específicas por item devem vir da versão brasileira autorizada.'],
+ ess:['LICENSE_REQUIRED','ESS-BR, 8 itens','https://epworthsleepinessscale.com/licenses/','https://doi.org/10.1590/S1806-37132009000900009','Obter licença da ESS para sua incorporação e reprodução no sistema, nas condições do titular.'],
+ mjoa:['UNAVAILABLE','mJOA Brasil — 18 pontos','https://doi.org/10.6061/clinics/2017(02)08','https://doi.org/10.1016/j.wneu.2018.05.173','Versão brasileira avaliada por profissional, com domínios neurológicos. O link de autorresposta não substitui a avaliação clínica; requer fluxo de aplicação pelo examinador.'],
+ masq:['UNAVAILABLE','MASQ original: 38 itens, 5 domínios','https://repository.niddk.nih.gov/media/studies/mapp2sps/Forms/MAPPII_MASQ_v1.0.20141109.pdf','https://doi.org/10.1016/j.jbspin.2010.01.005','A estrutura antiga de 30 itens/seis domínios não corresponde ao MASQ. A adaptação multilíngue localizada não estabelece validação psicométrica brasileira; falta uma versão brasileira aplicável documentada.'],
+ fss:['UNAVAILABLE','FSS brasileira, 9 itens','https://member.thoracic.org/members/assemblies/assemblies/srn/questionaires/fss.php','https://doi.org/10.1590/S0004-282X2012000700005','As fontes brasileiras localizadas divergem na redação e janela temporal do formulário. O texto exato da validação adotada ainda precisa ser obtido; não se presume restrição de licença para uso clínico gratuito.'],
+};
+Object.entries(INSTRUMENT_REQUIREMENTS).forEach(([k,[status,version,source,brazilSource,note]])=>{
+ if(!CURRENT_VALIDATED_INSTRUMENTS[k])INSTRUMENT_META[k]={status,version,source,brazilSource,note,administrationBlocked:true,licenseStatus:status==='LICENSE_REQUIRED'?'OWNER_AUTHORIZATION_REQUIRED':'NOT_A_LICENSE_BLOCK',minAnswered:null};
+});
+for(const [alias,target] of Object.entries(ASSIGNMENT_ALIASES))INSTRUMENT_META[alias]={...INSTRUMENT_META[target],status:'UNAVAILABLE',administrationBlocked:true,note:'Nova aplicação integrada em '+target+'. O histórico desta chave permanece separado.'};
+
+const QUESTIONNAIRES={...LEGACY_INSTRUMENTS,...CURRENT_VALIDATED_INSTRUMENTS};
+
+const QORDER = ["odi","ndi","tsk13","quickdash","spadi","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","sfi","nmq","ict","fiqr","wpi","sss","hoos","koos","fss","psqi","hit6","fabqpa","comi","hads","phq9","gad7","csi","orebro","ess","chalder","sf36","masq"];
+
+/* Autotestes executáveis sem rede. Fixtures não utilizam o próprio algoritmo
+   como oráculo. Para executar no navegador: ?devtest=1. */
+function testFixture(k,level=0){
+ const q=CURRENT_VALIDATED_INSTRUMENTS[k],len=q.type==='sections'?q.data.length:q.items.length;
+ if(k==='ict')return level===0?[2,0,0,0,{entries:Array(51).fill(2),details:Object.fromEntries(WAI_DETAILS.map(i=>[i,'Informado']))},[5],4,0,0,0,0]:level===2?[2,10,4,4,{entries:Array(51).fill(0),details:{}},[0],0,2,4,4,4]:[1,7,3,2,{entries:[2,...Array(50).fill(0)],details:{}},[1],1,1,2,2,2];
+ if(k==='psfs')return Array.from({length:3},(_,i)=>({activity:'Atividade '+(i+1),score:level*5,skipped:false}));
+ if(k==='nmq')return Array.from({length:9},()=>({y12:level===0?0:1,impede:level===0?0:1,care:level===0?0:1,y7:level===0?0:1}));
+ return Array.from({length:len},(_,i)=>{
+  const max=q.type==='sections'?q.data[i][1].length-1:q.type==='likert'?(q.optsPerItem?q.optsPerItem[i]:q.opts).length-1:q.type==='yesno'?1:10;
+  return level===0?0:level===2?max:Math.floor(max/2);
+ });
+}
+function runSelfTests(){
+ let count=0;const failures=[];
+ const check=(name,value)=>{count++;if(!value)failures.push(name);};
+ const near=(a,b)=>Math.abs(a-b)<1e-9;
+ const values=(k,a)=>validateAndScore(k,a).metrics?.map(m=>m.value);
+ const expected={orebro:[[31],[50],[70]],
+  sfi:[[100],[50],[0]],fabq:[[0,0],[12,21],[24,42]],rmdq:[[0],[0],[24]],eva:[[0,0,0,0],[5,5,5,5],[10,10,10,10]],phq9:[[0],[9],[27]],whodas:[[12],[36],[60]],spadi:[[0,0,0],[50,50,50],[100,100,100]],gad7:[[0],[7],[21]],
+  psfs:[[0,0,0,0],[5,5,5,5],[10,10,10,10]],lefs:[[0],[40],[80]],ict:[[7],[35],[49]],csi:[[0],[50],[100]],
+  tsk13:[[13],[26],[52]],dn4:[[0],[0],[7]],wiq:[[100,100,100],[50,50,50],[0,0,0]],chalder:[[0],[0],[11]],comi:[[0],[5],[10]],
+  sf36:[[0,0,0,50,40,50,100,60],[50,0,0,50,48,50,55,50],[100,100,100,50,60,50,0,40]]
+ };
+ for(const k of Object.keys(CURRENT_VALIDATED_INSTRUMENTS)){
+  const q=CURRENT_VALIDATED_INSTRUMENTS[k];
+  check(k+' administrável',canAdministerInstrument(k));
+  for(const l of [0,1,2]){
+   const a=testFixture(k,l),copy=JSON.stringify(a),r=validateAndScore(k,a);
+   check(k+' fixture '+l,r.status==='VALID_OFFICIAL');
+   check(k+' entrada preservada '+l,JSON.stringify(a)===copy);
+   check(k+' versão '+l,r.instrumentVersion===metaOf(k).version&&r.scoringVersion===SCORING_VERSION);
+   check(k+' relatório '+l,effectiveStatus(k,r)==='VALID_OFFICIAL'&&responseLines(k,r).length>3);
+   if(expected[k])check(k+' cálculo conhecido '+l,r.metrics.length===expected[k][l].length&&r.metrics.every((m,i)=>near(m.value,expected[k][l][i])));
+   for(const m of r.metrics)check(k+' finito/direção '+l,Number.isFinite(m.value)&&m.value>=0&&m.value<=m.max&&!!m.direction);
+  }
+  const a=testFixture(k,1);
+  check(k+' histórico sem versão',effectiveStatus(k,{rawAnswers:a})==='LEGACY_INVALID');
+  check(k+' histórico outra versão',effectiveStatus(k,{...validateAndScore(k,a),instrumentVersion:'old'})==='LEGACY_INVALID');
+  check(k+' comprimento',validateAndScore(k,a.slice(1)).status==='INVALID_INPUT');
+  for(let i=0;i<a.length;i++){
+   for(const value of [-1,999,1.2,'0',{},[],true,undefined]){
+    const bad=cloneAnswers(a);bad[i]=value;
+    if(k==='ict'&&i===5&&Array.isArray(value)&&!value.length)continue;
+    check(k+' inválido '+i+' '+JSON.stringify(value),validateAndScore(k,bad).status==='INVALID_INPUT');
+   }
+   const missing=cloneAnswers(a);missing[i]=null;const r=validateAndScore(k,missing);
+   if(k==='sf36'||k==='whodas')check(k+' missing permitido '+i,r.status==='VALID_OFFICIAL');
+   else check(k+' missing proibido '+i,r.status==='INCOMPLETE'&&!r.metrics);
+  }
+  const empty=Array(a.length).fill(null);check(k+' vazio',validateAndScore(k,empty).status==='INCOMPLETE');
+  const na=cloneAnswers(a);na[0]='NA';check(k+' NA',validateAndScore(k,na).status===(q.answerPolicy.allowNA?'VALID_OFFICIAL':'INVALID_INPUT'));
+  const r=validateAndScore(k,a);r.metrics=[{name:'injetado',value:999,max:999}];check(k+' score adulterado',effectiveStatus(k,r)==='INVALID_INPUT');
+ }
+
+ {let w=testFixture('whodas',2);w[0]=null;const r=validateAndScore('whodas',w);check('WHODAS 1 faltante imputado pela média',r.status==='VALID_OFFICIAL'&&near(r.metrics[0].value,60));
+  w[1]=null;check('WHODAS 2 faltantes sem escore',validateAndScore('whodas',w).status==='INCOMPLETE');
+  let m=testFixture('whodas',0);m[0]=null;m[1]=4;const r2=validateAndScore('whodas',m);check('WHODAS imputação média exata',near(r2.metrics[0].value,(10+5)+(15/11)));}
+ let a=Array(36).fill(null);[3,13,17,23,24,20,21,1].forEach(n=>a[n-1]=0);
+ check('RAND um item em cada domínio',validateAndScore('sf36',a).status==='VALID_OFFICIAL');a[2]=null;check('RAND domínio vazio',validateAndScore('sf36',a).status==='INCOMPLETE');
+ a=testFixture('fabq',0);[0,7,12,13,15].forEach(i=>a[i]=6);check('FABQ exclusões',values('fabq',a).every(v=>v===0));
+ a=testFixture('dn4');a[0]=a[1]=a[2]=1;check('DN4 corte 3',validateAndScore('dn4',a).interpretation.startsWith('Resultado sugestivo'));a[2]=0;check('DN4 abaixo corte',validateAndScore('dn4',a).interpretation.startsWith('Abaixo'));
+ a=testFixture('chalder');a.fill(1);check('Chalder bimodal normal',values('chalder',a)[0]===0);a.fill(2);check('Chalder bimodal sintomático',values('chalder',a)[0]===11);
+ a=testFixture('ict',1);a[0]=0;check('ICT ponderação mental 34',values('ict',a)[0]===34);a[0]=2;check('ICT mista 34',values('ict',a)[0]===34);
+ for(let n=0;n<7;n++){a=testFixture('ict',2);a[4].entries.fill(0);for(let i=0;i<n;i++){a[4].entries[i]=2;if(WAI_DETAILS.includes(i))a[4].details[i]='Local';}check('ICT doenças '+n,validateAndScore('ict',a).calculation.diseasePoints===[7,5,4,3,2,1,1][n]);}
+ a=testFixture('ict',2);a[4].entries.fill(1);WAI_DETAILS.forEach(i=>a[4].details[i]='Local');check('ICT opinião não é diagnóstico',validateAndScore('ict',a).calculation.diagnosedDiseases===0);
+ a=testFixture('ict',2);a[5]=[0,5];check('ICT múltiplas usa pior',validateAndScore('ict',a).calculation.impairment===1);
+ a=testFixture('wiq');a.fill(4);a[6]=0;check('WIQ peso distância',near(values('wiq',a)[0],6000/14080*100));
+ a=testFixture('comi');a[1]=2;a[2]=8;check('COMI máximo dor',near(values('comi',a)[0],1.6));
+ const old={instrumentVersion:'old',rawAnswers:[3],raw:40,pct:80},snapshot=JSON.stringify(old);
+ const report=buildReportText({name:'Teste',created_at:'2020-01-01',responses:{ict:old}});
+ check('histórico sem cálculo',report.includes('Histórico incompatível')&&!report.includes('40/49')&&JSON.stringify(old)===snapshot);
+ check('aliases só atribuição',activeKeys(['fabqpa','fabq','sss','wpi']).join(',')==='fabq,wpi');
+
+ a=[0,0,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,1,1,0,0,0,0,5,5,0,0,5,5,0,5,4,4,0,4,0];
+ check('RAND máximo em todos os domínios',values('sf36',a).every(v=>v===100));
+ a=[4,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,5,4,5,0,0,5,5,0,0,5,0,0,0,4,0,4];
+ check('RAND mínimo em todos os domínios',values('sf36',a).every(v=>v===0));
+ a=Array(24).fill(0).map((v,i)=>i%2);check('RMDQ intermediário 12',values('rmdq',a)[0]===12);
+ a=Array(20).fill(0);a[0]=4;a[1]=2;check('LEFS 6/80 sem inversão',values('lefs',a)[0]===6);
+ a=testFixture('wpi',0);check('WPI/SSS mínimos',values('wpi',a).join(',')==='0,0');
+ a=testFixture('wpi',2);check('WPI/SSS máximos',values('wpi',a).join(',')==='19,12');
+ check('FSQ condições completas',validateAndScore('wpi',a).interpretation.includes('2016 atendidos'));
+ a[25]=0;check('FSQ duração obrigatória',validateAndScore('wpi',a).interpretation.includes('não atendidos'));
+ a=testFixture('wpi',0);[1,5,8,11].forEach(i=>a[i]=1);a[19]=a[20]=a[21]=3;a[25]=1;
+ check('FSQ WPI4 SSS9 quatro regiões',validateAndScore('wpi',a).interpretation.includes('2016 atendidos'));
+ a[21]=2;check('FSQ WPI4 SSS8 não atende',validateAndScore('wpi',a).interpretation.includes('não atendidos'));
+ a=testFixture('wpi',0);[0,1,2,3,4,5,6].forEach(i=>a[i]=1);a[19]=3;a[20]=2;a[25]=1;
+ check('FSQ WPI7 SSS5 sem distribuição não atende',validateAndScore('wpi',a).interpretation.includes('não atendidos'));
+ check('NMQ nunca soma regiões',validateAndScore('nmq',testFixture('nmq',2)).metrics.length===0);
+
+
+ a=[0,0,10,10,0,0,0,10,0,0];check('Örebro mínimo 1',values('orebro',a)[0]===1);
+ a=[9,10,0,0,10,10,10,0,10,10];check('Örebro máximo 100',values('orebro',a)[0]===100);
+ a=[4,5,5,5,5,5,5,5,5,5];check('Örebro corte 50',validateAndScore('orebro',a).interpretation.startsWith('De 1 a 50'));
+ a[1]=6;check('Örebro corte 51',validateAndScore('orebro',a).interpretation.startsWith('Acima de 50'));
+ const result={count,failed:failures.length,failures};
+ if(failures.length)throw new Error('Autotestes: '+failures.join(' | '));
+ return result;
+}
+if(new URLSearchParams(window.location.search).get('devtest')==='1')window.CLINIMETRIC_TEST_RESULT=runSelfTests();
 
 /* ---------- Supabase data layer ---------- */
 function newUuid(){
@@ -1284,9 +1401,18 @@ async function dbCreatePatient(name, phone){
  return id;
 }
 async function dbSaveResponses(id, responses){
- const {data, error} = await supabase.rpc('save_submission_responses', {p_id:id, p_responses:responses});
+ for(const [k,r] of Object.entries(responses)){
+  if(!canAdministerInstrument(k)) throw new Error(BLOCKED_MESSAGE);
+  if(effectiveStatus(k,r)==='LEGACY_INVALID') throw new Error('Histórico não pode ser sobrescrito por esta rotina.');
+  const checked=validateAndScore(k,r.rawAnswers);
+  if(checked.status!=='VALID_OFFICIAL') throw new Error('INVALID_INPUT: '+answerErrors(k,r.rawAnswers).join('; '));
+  if(state.responsesLocal[k] && effectiveStatus(k,state.responsesLocal[k])==='LEGACY_INVALID') throw new Error('Histórico não pode ser sobrescrito. Gere uma nova atribuição.');
+  responses[k]=checked;
+ }
+ const persisted={...state.responsesLocal,...responses};
+ const {data, error} = await supabase.rpc('save_submission_responses', {p_id:id, p_responses:persisted});
  if(error){ alert('Erro ao salvar: '+error.message); throw error; }
- if(data === 0){ alert('Aviso técnico: nenhuma linha foi encontrada para atualizar (id: '+id+').'); }
+ if(data === 0) throw new Error('Nenhum registro atualizado; as respostas não foram confirmadas pelo servidor.');
 }
 async function dbListAll(){
  const {data, error} = await supabase.from('submissions').select('*').order('created_at', {ascending:false});
@@ -1308,6 +1434,8 @@ async function authCurrentUser(){
 }
 
 async function dbCreateAssignment(name, phone, assignedKeys){
+ if(Array.isArray(assignedKeys)) assignedKeys=[...new Set(assignedKeys.map(k=>ASSIGNMENT_ALIASES[k]||k))];
+ if(!Array.isArray(assignedKeys) || !assignedKeys.length || assignedKeys.some(k=>!canAdministerInstrument(k))) throw new Error(BLOCKED_MESSAGE);
  const id = newUuid();
  const {error} = await supabase.from('submissions').insert({id, name, phone, responses:{}, assigned:assignedKeys});
  if(error){ alert('Erro ao gerar link: '+error.message); throw error; }
@@ -1367,7 +1495,7 @@ async function dbBookSlot(id, name, phone){
 let state = { view:'landing', patientId:null, patientName:'', responsesLocal:{}, qKey:null, qIndex:0, qAnswers:[], patients:[], openPatient:null, authError:'', openDetails:{}, slots:[], scheduleStep:null, scheduleSlots:[], selectedSlotId:null };
 let justDoneTimer = null;
 const app = document.getElementById('app');
-function render(){ app.innerHTML = views[state.view](); bind(); }
+function render(){ if(['instructions','wizard'].includes(state.view) && !canAdministerInstrument(state.qKey)){ alert(BLOCKED_MESSAGE); state.view='list'; } app.innerHTML = views[state.view](); bind(); }
 
 /* ---------- Views ---------- */
 const views = {
@@ -1392,7 +1520,7 @@ landing(){
 },
 
 list(){
- const keys = state.assignedKeys || QORDER;
+ const keys = activeKeys(state.assignedKeys);
  const rows = keys.map(k=>{
    const done = !!state.responsesLocal[k];
    const qd = QUESTIONNAIRES[k];
@@ -1401,13 +1529,14 @@ list(){
        <div class="qcard-title">${qd.about || qd.title}</div>
        <div class="qcard-sub">${qd.title}</div>
      </div>
-     <span class="badge ${done?'badge-done':'badge-pending'}">${done?'concluído':'pendente'}</span>
+     <span class="badge ${done?'badge-done':'badge-pending'}">${done?statusLabel(effectiveStatus(k,state.responsesLocal[k])):'pendente'}</span>
    </div>`;
  }).join('');
  return `
  <div class="topbar"><div class="brand">Olá, ${state.patientName.split(' ')[0]}<small>Escolha um questionário</small></div></div>
  <main>
    <p class="sub">Responda cada um destes. Quando terminar, pode fechar a página — seu fisioterapeuta já recebe os resultados.</p>
+   ${(state.assignedKeys||[]).some(k=>!canAdministerInstrument(k))?`<p class="sub">Há instrumentos bloqueados nesta atribuição. ${BLOCKED_MESSAGE} Entre em contato com o profissional responsável.</p>`:''}
    ${rows}
    <button class="btn btn-ghost" id="finishBtn" style="width:100%;margin-top:10px;">Concluir e enviar</button>
  </main>`;
@@ -1418,8 +1547,8 @@ instructions(){
  return `<div class="topbar"><div class="brand">${q.title}<small>Antes de começar</small></div></div>
  <main>
    <div class="card">
-     <p class="sub" style="margin-bottom:14px;">Responda pensando em como você está agora, nas últimas semanas — não em como era antes do problema começar, e não em como imagina que vai ficar no futuro.</p>
-     <p class="sub" style="margin-bottom:14px;">Não existe resposta certa ou errada. Responda com sinceridade, mesmo que a resposta pareça leve ou grave. O importante é que reflita exatamente o que você sente e consegue fazer hoje.</p>
+     <p class="sub" style="margin-bottom:14px;">${escapeHtml(q.intro||'Observe o período indicado em cada pergunta.')}</p>
+     <p class="sub" style="margin-bottom:14px;">Não existe resposta certa ou errada. Responda com sinceridade, mesmo que a resposta pareça leve ou grave. Observe a janela de tempo de cada instrumento.</p>
      <p class="sub" style="margin-bottom:0;">Se tiver dúvida sobre o que uma pergunta quer dizer, pergunte antes de responder.</p>
      ${state.qKey==='psfs' ? `<div style="margin-top:16px;padding-top:16px;border-top:1px dashed var(--line);"><p class="sub" style="margin-bottom:0;">Pense em atividades do seu dia a dia que ficaram difíceis por causa do seu problema de saúde. Pode ser qualquer coisa: uma tarefa em casa, no trabalho, um hobby, um movimento específico. Escolha as que realmente afetam sua rotina.</p></div>` : ''}
    </div>
@@ -1437,8 +1566,15 @@ wizard(){
  let body='';
  const itemHelp = (ITEM_HELP[state.qKey] && ITEM_HELP[state.qKey][state.qIndex]) || null;
  const helpHtml = itemHelp ? `<p class="sub" style="margin-top:-6px;margin-bottom:16px;">💡 ${itemHelp}</p>` : '';
- const naBtnHtml = `<button class="btn btn-ghost" id="naBtn" style="width:100%;margin-top:14px;font-size:13.5px;">${state.qAnswers[state.qIndex]==='NA'?'✓ Marcado como \"não se aplica\" — toque numa opção acima para responder mesmo assim':'Não sei responder / não se aplica a mim'}</button>`;
- if(q.type==='sections'){
+ const naBtnHtml = q.answerPolicy.allowNA ? `<button class="btn btn-ghost" id="naBtn" style="width:100%;margin-top:14px;font-size:13.5px;">${state.qAnswers[state.qIndex]==='NA'?'✓ Marcado como \"não se aplica\" — toque numa opção acima para responder mesmo assim':'Deixar este item sem resposta'}</button>` : '';
+ if(q.special?.[state.qIndex]==='diseases'){
+  const v=state.qAnswers[state.qIndex]||{entries:Array(51).fill(null),details:{}};
+  body='<div class="qtext">'+escapeHtml(current[0])+'</div><p class="sub">Selecione uma resposta para cada condição. Não deixe condições não existentes sem resposta.</p>'+WAI_DISEASES.map((label,i)=>'<div style="margin:14px 0"><label for="disease-'+i+'">'+(i+1)+'. '+escapeHtml(label)+'</label><select class="disease-select" id="disease-'+i+'" data-index="'+i+'" style="display:block;width:100%;padding:12px"><option value="">Selecione</option>'+['Não possuo','Minha opinião','Diagnóstico médico','Minha opinião e diagnóstico médico'].map((t,n)=>'<option value="'+n+'" '+(v.entries[i]===n?'selected':'')+'>'+t+'</option>').join('')+'</select>'+(WAI_DETAILS.includes(i)&&v.entries[i]>0?'<label>Especifique <input class="disease-detail" data-index="'+i+'" maxlength="1000" value="'+escapeHtml(v.details[i]||'')+'"></label>':'')+'</div>').join('');
+ } else if(q.special?.[state.qIndex]==='multi'){
+  const v=state.qAnswers[state.qIndex]||[];
+  body='<div class="qtext">'+escapeHtml(current[0])+'</div>'+current[1].map((o,i)=>'<button class="multi-opt opt '+(v.includes(i)?'selected':'')+'" data-val="'+i+'" aria-pressed="'+v.includes(i)+'">'+escapeHtml(o)+'</button>').join('');
+ }
+ else if(q.type==='sections'){
   const [domain, opts] = current;
   body = `<div class="qtext">${domain}</div>` + helpHtml + opts.map((o,i)=>`<button class="opt ${state.qAnswers[state.qIndex]===i?'selected':''}" data-val="${i}">${o}</button>`).join('') + naBtnHtml;
  } else if(q.type==='likert'){
@@ -1454,45 +1590,34 @@ wizard(){
    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px;">
     ${[0,1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="opt" data-val="${n}" style="text-align:center;padding:16px 0;margin-bottom:0;font-weight:700;font-size:18px;${val===n?'border-color:var(--navy);background:#EEF1F7;':''}">${n}</button>`).join('')}
    </div>
-   <p class="sub" style="margin-bottom:0;">0 = sem dor nenhuma · 10 = a pior dor que você já sentiu</p>`;
+   <p class="sub" style="margin-bottom:0;">0 = sem dor nenhuma · 10 = a pior dor que você pode imaginar</p>`;
  } else if(q.type==='psfs'){
   const existing = state.qAnswers[state.qIndex] || {activity:'', score:null};
   const skipped = existing.skipped;
   body = `<div class="qtext">${current}</div>
    ${skipped ? `<p class="sub">Você optou por não citar essa atividade. Pode seguir para a próxima tela.</p>` : `
    <label class="field">Nome da atividade</label>
-   <input type="text" id="psfsActivity" placeholder="Ex.: subir escadas, carregar sacola de compras..." value="${existing.activity||''}">
+   <input type="text" id="psfsActivity" placeholder="Ex.: subir escadas, carregar sacola de compras..." value="${escapeHtml(existing.activity||'')}">
    <label class="field" style="margin-top:14px;">Nota</label>
    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px;">
     ${[0,1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="opt psfs-num" data-val="${n}" style="text-align:center;padding:14px 0;margin-bottom:0;font-weight:700;font-size:16px;${existing.score===n?'border-color:var(--navy);background:#EEF1F7;':''}">${n}</button>`).join('')}
    </div>
    <p class="sub" style="margin-bottom:0;">0 = não consigo fazer de jeito nenhum · 10 = consigo fazer como fazia antes</p>
    `}
-   ${state.qIndex>0 ? `<button class="btn btn-ghost" id="psfsSkipBtn" style="width:100%;margin-top:14px;">${skipped?'Na verdade, quero citar uma atividade':'Não tenho mais nenhuma atividade para citar'}</button>` : ''}`;
+   ${false ? `<button class="btn btn-ghost" id="psfsSkipBtn" style="width:100%;margin-top:14px;">${skipped?'Na verdade, quero citar uma atividade':'Não tenho mais nenhuma atividade para citar'}</button>` : ''}`;
  } else if(q.type==='nmq'){
-  const ex = state.qAnswers[state.qIndex] || {y12:null, impede:null, y7:null};
+  const ex = state.qAnswers[state.qIndex] || {y12:null, impede:null, care:null, y7:null};
   const yn = (field, label)=>`<div style="margin-bottom:16px;">
     <div style="font-size:14px;color:var(--ink);margin-bottom:8px;">${label}</div>
     <button class="opt nmq-opt" data-field="${field}" data-val="1" style="display:inline-block;width:auto;margin:0 8px 0 0;padding:11px 20px;${ex[field]===1?'border-color:var(--navy);background:#EEF1F7;font-weight:600;':''}">Sim</button>
     <button class="opt nmq-opt" data-field="${field}" data-val="0" style="display:inline-block;width:auto;margin:0;padding:11px 20px;${ex[field]===0?'border-color:var(--navy);background:#EEF1F7;font-weight:600;':''}">Não</button>
    </div>`;
-  let inner = yn('y12','Nos últimos 12 meses, você teve dor, desconforto ou dormência nessa região?');
-  if(ex.y12===1){
-   inner += yn('impede','Isso impediu suas atividades normais (trabalho, casa ou lazer) em algum momento?');
-   inner += yn('y7','Você teve esse problema nos últimos 7 dias?');
-  } else if(ex.y12===0){
-   inner += `<p class="sub" style="margin-top:-6px;">Como você respondeu "Não", pode seguir para a próxima região.</p>`;
-  }
+  const inner=Object.entries(NMQ_FIELDS).map(([f,t])=>yn(f,t)).join('');
   body = `<div class="qtext">${current}</div>` + inner;
  }
- const psfsAns = state.qAnswers[state.qIndex];
- const psfsOk = q.type==='psfs' && psfsAns && (psfsAns.skipped || (psfsAns.activity && psfsAns.activity.trim() && psfsAns.score!==null && psfsAns.score!==undefined));
- const nmqEx = state.qAnswers[state.qIndex];
- const nmqOk = q.type==='nmq' && nmqEx && nmqEx.y12!==null && (nmqEx.y12===0 || (nmqEx.impede!==null && nmqEx.y7!==null));
- let nextDisabled;
- if(q.type==='psfs') nextDisabled = !psfsOk;
- else if(q.type==='nmq') nextDisabled = !nmqOk;
- else nextDisabled = (state.qAnswers[state.qIndex]===null||state.qAnswers[state.qIndex]===undefined);
+ const value=state.qAnswers[state.qIndex];
+ const nextDisabled=!(itemComplete(q,state.qIndex,value)||(value==='NA'&&q.answerPolicy.allowNA));
+
  return `
  <div class="topbar"><div class="brand">${q.title}<small>${state.qIndex+1} de ${total}</small></div></div>
  <main>
@@ -1507,7 +1632,7 @@ wizard(){
 },
 
 justDone(){
- const keys = state.assignedKeys || QORDER;
+ const keys = activeKeys(state.assignedKeys);
  const remaining = keys.filter(k=>!state.responsesLocal[k]);
  const next = remaining[0];
  return `<div class="topbar"><div class="brand">Gabriel dos Santos<small>Avaliação Funcional</small></div></div>
@@ -1563,104 +1688,13 @@ dashboard(){
   const keys = Object.keys(p.responses||{});
   const inner = keys.map(k=>{
    const r = p.responses[k];
-   const qdef = QUESTIONNAIRES[k];
-   let pillsHtml='', detail='';
-   if(k==='eva'){
-    detail = qdef.items.map((label,i)=>{
-     const v = r.answers[i]; const b = evaBand(v??0);
-     return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;"><span>${label}</span><span class="pill" style="color:${b.txt};background:${b.bg}">${v??'-'}/10</span></div>`;
-    }).join('');
-    pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">4 condições</span>`;
-   } else if(k==='psfs'){
-    detail = (r.activities||[]).map((a,i)=>{
-     if(!a || a.skipped || !a.activity) return '';
-     const b = psfsItemBand(a.score??0);
-     return `<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:13px;"><span>${a.activity||'(sem nome)'}</span><span class="pill" style="color:${b.txt};background:${b.bg}">${a.score??'-'}/10</span></div>`;
-    }).join('');
-    pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">${(r.activities||[]).filter(a=>a && !a.skipped && a.activity).length} atividades</span>`;
-   } else if(k==='dn4'){
-    const band = dn4Band(r.raw);
-    pillsHtml = pillHtml(band);
-    detail = `${r.raw}/7 itens positivos (corte usual: ≥3/7 sugere dor neuropática)`;
-   } else if(k==='mjoa'){
-    const band = mjoaBand(r.raw, r.maxPossible);
-    pillsHtml = pillHtml(band);
-    detail = `${r.raw}/${r.maxPossible||18} pontos · ${r.n} domínios respondidos (≥15 leve · 12-14 moderada · ≤11 grave, escala de 18)`;
-   } else if(k==='nmq'){
-    pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">${r.y12count} regiões</span>`;
-    detail = `${r.y12count} regiões com sintoma nos últimos 12 meses · ${r.y7count} nos últimos 7 dias · ${r.impedeCount} com impacto funcional${r.regions&&r.regions.length?(' — '+r.regions.join(', ')):''}`;
-   } else if(k==='ict'){
-    if(r.incomplete || r.raw===null){
-     pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">incompleto</span>`;
-     detail = `${r.n}/11 itens respondidos — o cálculo do total do WAI exige os 11 itens respondidos (sem "não se aplica"); complete todos para ver a classificação`;
-    } else {
-     const band = ictBand(r.raw);
-     pillsHtml = pillHtml(band);
-     detail = `${r.raw}/49 pontos — referência: 7-27 baixa, 28-36 moderada, 37-43 boa, 44-49 excelente`;
-    }
-   } else if(k==='wpi'){
-    const wpiHigh = r.raw>=7;
-    pillsHtml = `<span class="pill" style="color:${wpiHigh?'var(--r3-txt)':'var(--r1-txt)'};background:${wpiHigh?'var(--r3-bg)':'var(--r1-bg)'}">WPI ${r.raw}/19</span>`;
-    detail = `${r.raw} regiões com dor na última semana. Critério ACR de fibromialgia: WPI ≥7 (com SSS ≥5) ou WPI 4-6 (com SSS ≥9) — ver resultado do SSS`;
-   } else if(k==='sss'){
-    const sssHigh = r.raw>=5;
-    pillsHtml = `<span class="pill" style="color:${sssHigh?'var(--r3-txt)':'var(--r1-txt)'};background:${sssHigh?'var(--r3-bg)':'var(--r1-bg)'}">SSS ${r.raw}/12</span>`;
-    detail = `${r.raw} pontos. Critério ACR de fibromialgia: SSS ≥5 (com WPI ≥7) ou SSS ≥9 (com WPI 4-6) — ver resultado do WPI`;
-   } else if(k==='hads'){
-    const anxBand = r.anxSum>=11?{txt:'var(--r3-txt)',bg:'var(--r3-bg)',label:'Clinicamente significativa'}:(r.anxSum>=8?{txt:'var(--r2-txt)',bg:'var(--r2-bg)',label:'Leve/limítrofe'}:{txt:'var(--r1-txt)',bg:'var(--r1-bg)',label:'Normal'});
-    const depBand = r.depSum>=11?{txt:'var(--r3-txt)',bg:'var(--r3-bg)',label:'Clinicamente significativa'}:(r.depSum>=8?{txt:'var(--r2-txt)',bg:'var(--r2-bg)',label:'Leve/limítrofe'}:{txt:'var(--r1-txt)',bg:'var(--r1-bg)',label:'Normal'});
-    pillsHtml = `<span class="pill" style="color:${anxBand.txt};background:${anxBand.bg}">Ansiedade ${r.anxSum}/21</span> <span class="pill" style="color:${depBand.txt};background:${depBand.bg};margin-left:4px;">Depressão ${r.depSum}/21</span>`;
-    detail = `Ansiedade: ${anxBand.label} · Depressão: ${depBand.label} (referência: 0-7 normal, 8-10 leve, ≥11 clinicamente significativo, por subescala)`;
-   } else if(k==='csi'){
-    const band = csiBand(r.raw);
-    pillsHtml = pillHtml(band);
-    detail = `${r.raw}/100 pontos (referência: &lt;30 subclínica, 30-39 leve, 40-49 moderada, 50-59 grave, ≥60 extrema)`;
-   } else if(k==='orebro'){
-    const band = orebroBand(r.raw);
-    pillsHtml = pillHtml(band);
-    detail = `${r.raw}/100 normalizado (referência aproximada: ≥50 alto risco — escore oficial validado sobre soma bruta, aqui normalizado; trate como aproximação)`;
-   } else if(k==='ess'){
-    const band = essBand(r.raw);
-    pillsHtml = pillHtml(band);
-    detail = `${r.raw}/24 pontos (referência: 0-9 normal, 10-15 sonolência excessiva, ≥16 grave)`;
-   } else if(k==='chalder'){
-    pillsHtml = `<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">Física ${r.physSum}/21</span> <span class="pill" style="background:var(--gray-bg);color:var(--gray-txt);margin-left:4px;">Mental ${r.mentSum}/12</span>`;
-    detail = `Fadiga física: ${r.physSum}/21 · Fadiga mental: ${r.mentSum}/12 (total ${r.raw}/33)`;
-   } else if(k==='sf36'){
-    pillsHtml = r.domains.map(d=>{
-     if(d.pct===null) return '';
-     const b = sf36Band(d.pct);
-     return `<span class="pill" style="color:${b.txt};background:${b.bg};margin:2px 4px 2px 0;display:inline-block;">${d.label} ${d.pct.toFixed(0)}%</span>`;
-    }).join('');
-    detail = `Escala oficial: 0% = pior saúde possível, 100% = melhor saúde possível, por domínio`;
-   } else if(k==='masq'){
-    pillsHtml = r.domains.map(d=>{
-     if(d.pct===null) return '';
-     const b = cifBand(d.pct);
-     return `<span class="pill" style="color:${b.txt};background:${b.bg};margin:2px 4px 2px 0;display:inline-block;">${d.label} ${d.pct.toFixed(0)}%</span>`;
-    }).join('');
-    detail = `Quanto maior o percentual, mais frequente a queixa cognitiva naquele domínio`;
-   } else {
-    const band = cifBand(r.pct);
-    pillsHtml = pillHtml(band) + ` <span class="pill" style="background:var(--gray-bg);color:var(--gray-txt);margin-left:4px;">CIF ${band.q}</span>`;
-    detail = `${r.pct.toFixed(0)}% · ${r.n} itens respondidos`;
-    if(k==='pcs'){ detail += ` · ${r.raw}/52 pontos (corte clínico usual: ≥30)`; }
-    if(k==='fabq'){ detail += ` · ${r.raw}/42 pontos (corte usual: ≥34, alto medo-evitação)`; }
-    if(k==='fabqpa'){ detail += ` · ${r.raw}/24 pontos`; }
-    if(k==='rmdq'){ detail += ` · ${r.raw}/24 itens marcados`; }
-    if(k==='hit6'){ detail += ` · ${r.raw} pontos, soma simplificada (escore oficial usa pesos por item — confira antes de citar no laudo)`; }
-    if(k==='comi'){ detail += ` · ${r.raw}/${r.maxPossible} pontos`; }
-   }
+   const qdef = QUESTIONNAIRES[k] || {title:k};
+   const effective=effectiveStatus(k,r);
+   const pillsHtml='<span class="pill" style="background:var(--gray-bg);color:var(--gray-txt)">'+statusLabel(effective)+'</span>';
+   const detail=scoreLines(k,r).map(escapeHtml).join('<br>');
    const detailKey = p.id+'::'+k;
    const isOpen = !!state.openDetails[detailKey];
-   const canExpand = (k!=='eva' && k!=='psfs' && k!=='sf36' && k!=='masq');
-   if(k==='sf36' || k==='masq'){
-    return `<div class="score-line" style="flex-direction:column;align-items:stretch;">
-      <div class="sname">${qdef.title}</div>
-      <div class="sdetail" style="margin-bottom:8px;">${detail}</div>
-      <div>${pillsHtml}</div>
-    </div>`;
-   }
+   const canExpand = true;
    return `<div class="score-line" style="flex-direction:column;align-items:stretch;">
      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
        <div><div class="sname">${qdef.title}</div>${(k==='eva'||k==='psfs')?`<div style="margin-top:6px;">${detail}</div>`:`<div class="sdetail">${detail}</div>`}</div>
@@ -1734,13 +1768,13 @@ dashboard(){
        <button class="btn btn-ghost" id="unmarkAllBtn" style="flex:1;font-size:13px;padding:10px;">Desmarcar todos</button>
      </div>
      <div style="margin-bottom:16px;max-height:360px;overflow-y:auto;">
-       ${QORDER.map(k=>`<label class="qcheck-row" data-search="${(QUESTIONNAIRES[k].title+' '+(QUESTIONNAIRES[k].about||'')).toLowerCase()}" style="display:flex;align-items:center;gap:10px;padding:9px 0;font-size:14.5px;border-bottom:1px dashed var(--line);">
-         <input type="checkbox" class="qcheck" value="${k}" checked style="width:18px;height:18px;flex-shrink:0;">
-         <span><strong>${QUESTIONNAIRES[k].title}</strong><br><span style="color:var(--muted);font-size:12.5px;">${QUESTIONNAIRES[k].about||''}</span></span>
+       ${activeKeys().map(k=>`<label class="qcheck-row" data-search="${(QUESTIONNAIRES[k].title+' '+(QUESTIONNAIRES[k].about||'')).toLowerCase()}" style="display:flex;align-items:center;gap:10px;padding:9px 0;font-size:14.5px;border-bottom:1px dashed var(--line);">
+         <input type="checkbox" class="qcheck" value="${k}" ${canAdministerInstrument(k)?'checked':'disabled'} style="width:18px;height:18px;flex-shrink:0;">
+         <span><strong>${QUESTIONNAIRES[k].title}</strong><br><span style="color:var(--muted);font-size:12.5px;">${canAdministerInstrument(k)?(QUESTIONNAIRES[k].about||''):administrationLabel(k)}</span></span>
        </label>`).join('')}
        <p class="sub" id="qSearchEmpty" style="display:none;margin:10px 0 0;">Nenhum questionário encontrado com esse termo.</p>
      </div>
-     <button class="btn btn-primary" id="genLinkBtn">Gerar link</button>
+     <details style="margin-bottom:16px"><summary>Condições de uso dos demais instrumentos</summary>${QORDER.filter(k=>!canAdministerInstrument(k)&&!ASSIGNMENT_ALIASES[k]).map(k=>`<p><strong>${escapeHtml(LEGACY_INSTRUMENTS[k]?.title||k)}</strong>: ${escapeHtml(metaOf(k).note)} <a href="${escapeHtml(metaOf(k).source)}" target="_blank" rel="noopener noreferrer">Fonte</a></p>`).join('')}</details><button class="btn btn-primary" id="genLinkBtn">Gerar link</button>
      <div id="linkResult" style="display:none;margin-top:14px;padding:14px;background:var(--bg);border-radius:10px;">
        <div id="linkText" style="font-family:'IBM Plex Mono',monospace;font-size:12px;word-break:break-all;"></div>
        <button class="btn btn-ghost" id="copyLinkBtn" style="width:100%;margin-top:10px;">Copiar link</button>
@@ -1871,11 +1905,13 @@ function bind(){
   document.querySelectorAll('.qcard').forEach(el=>{
    el.onclick = ()=>{
     const k = el.dataset.q;
+    if(!canAdministerInstrument(k)){ alert(BLOCKED_MESSAGE); return; }
     state.qKey=k; state.qIndex=0;
     const q = QUESTIONNAIRES[k];
     const len = q.type==='sections'? q.data.length : q.items.length;
     const existing = state.responsesLocal[k];
-    state.qAnswers = existing && existing.rawAnswers ? existing.rawAnswers.slice() : new Array(len).fill(null);
+    if(existing && effectiveStatus(k,existing)==='LEGACY_INVALID'){ alert('Aplicação histórica incompatível com a versão atual — respostas preservadas apenas descritivamente. Solicite uma nova atribuição ao profissional.'); return; }
+    state.qAnswers = existing && Array.isArray(existing.rawAnswers) ? cloneAnswers(existing.rawAnswers) : new Array(len).fill(null);
     state.view='instructions'; render();
    };
   });
@@ -1883,13 +1919,32 @@ function bind(){
  }
 
  if(state.view==='instructions'){
-  $('startQBtn').onclick = ()=>{ state.view='wizard'; render(); };
+  $('startQBtn').onclick = ()=>{ if(!canAdministerInstrument(state.qKey)){ alert(BLOCKED_MESSAGE); return; } state.view='wizard'; render(); };
  }
 
  if(state.view==='wizard'){
   const q = QUESTIONNAIRES[state.qKey];
   const total = q.type==='sections'? q.data.length : q.items.length;
-  if(q.type==='psfs'){
+  if(q.special?.[state.qIndex]==='diseases'){
+   if(!state.qAnswers[state.qIndex])state.qAnswers[state.qIndex]={entries:Array(51).fill(null),details:{}};
+   document.querySelectorAll('.disease-select').forEach(el=>el.onchange=()=>{
+    const a=state.qAnswers[state.qIndex],i=Number(el.dataset.index);
+    a.entries[i]=el.value===''?null:Number(el.value);
+    if(!a.entries[i])delete a.details[i];
+    render();
+   });
+   document.querySelectorAll('.disease-detail').forEach(el=>el.oninput=()=>{
+    state.qAnswers[state.qIndex].details[el.dataset.index]=el.value;
+    $('nextBtn').disabled=!itemComplete(q,state.qIndex,state.qAnswers[state.qIndex]);
+   });
+  } else if(q.special?.[state.qIndex]==='multi'){
+   if(!state.qAnswers[state.qIndex])state.qAnswers[state.qIndex]=[];
+   document.querySelectorAll('.multi-opt').forEach(el=>el.onclick=()=>{
+    const a=state.qAnswers[state.qIndex],n=Number(el.dataset.val);
+    state.qAnswers[state.qIndex]=a.includes(n)?a.filter(v=>v!==n):[...a,n].sort((a,b)=>a-b);render();
+   });
+  }
+ else if(q.type==='psfs'){
    if(!state.qAnswers[state.qIndex]) state.qAnswers[state.qIndex] = {activity:'', score:null, skipped:false};
    const activityInput = $('psfsActivity');
    if(activityInput){
@@ -1907,7 +1962,7 @@ function bind(){
     render();
    });
   } else if(q.type==='nmq'){
-   if(!state.qAnswers[state.qIndex]) state.qAnswers[state.qIndex] = {y12:null, impede:null, y7:null};
+   if(!state.qAnswers[state.qIndex]) state.qAnswers[state.qIndex] = {y12:null, impede:null, care:null, y7:null};
    document.querySelectorAll('.nmq-opt').forEach(el=>{
     el.onclick = ()=>{
      const field = el.dataset.field;
@@ -1925,18 +1980,19 @@ function bind(){
   $('backBtn').onclick = ()=>{ if(state.qIndex===0){ state.view='list'; render(); } else { state.qIndex--; render(); } };
   $('nextBtn').onclick = async ()=>{
    if(state.qIndex < total-1){ state.qIndex++; render(); return; }
-   const result = q.score(state.qAnswers);
-   result.rawAnswers = state.qAnswers.slice();
-   result.completedAt = Date.now();
-   state.responsesLocal[state.qKey] = result;
+   const result = validateAndScore(state.qKey, state.qAnswers);
+   if(!canAdministerInstrument(state.qKey)){ alert(BLOCKED_MESSAGE); return; }
+   if(result.status!=='VALID_OFFICIAL'){ alert(STATUS_MESSAGES[result.status]+' '+answerErrors(state.qKey,state.qAnswers).join('; ')); return; }
    $('nextBtn').disabled = true; $('nextBtn').textContent='Salvando...';
-   await dbSaveResponses(state.patientId, state.responsesLocal);
+   try { await dbSaveResponses(state.patientId, {[state.qKey]:result}); }
+   catch(error){ console.error(error); $('nextBtn').disabled=false; $('nextBtn').textContent='Concluir'; return; }
+   state.responsesLocal[state.qKey] = result;
    state.view='justDone'; render();
   };
  }
 
  if(state.view==='justDone'){
-  const keys = state.assignedKeys || QORDER;
+  const keys = activeKeys(state.assignedKeys);
   const remaining = keys.filter(k=>!state.responsesLocal[k]);
   const next = remaining[0];
   if(next){
@@ -2021,7 +2077,7 @@ function bind(){
   });
   $('markAllBtn').onclick = ()=>{
    document.querySelectorAll('.qcheck-row').forEach(el=>{
-    if(el.style.display !== 'none'){ el.querySelector('.qcheck').checked = true; }
+    if(el.style.display !== 'none'){ if(!el.querySelector('.qcheck').disabled) el.querySelector('.qcheck').checked = true; }
    });
   };
   $('unmarkAllBtn').onclick = ()=>{
@@ -2042,7 +2098,7 @@ function bind(){
   $('genLinkBtn').onclick = async ()=>{
    const name = $('newName').value.trim();
    if(!name){ $('newName').style.borderColor='#C00000'; return; }
-   const checked = Array.from(document.querySelectorAll('.qcheck:checked')).map(el=>el.value);
+   const checked = Array.from(document.querySelectorAll('.qcheck:checked')).map(el=>el.value).filter(canAdministerInstrument);
    if(!checked.length){ alert('Selecione ao menos um questionário para este paciente.'); return; }
    $('genLinkBtn').disabled = true; $('genLinkBtn').textContent = 'Gerando...';
    const id = await dbCreateAssignment(name, $('newPhone').value.trim(), checked);
@@ -2118,6 +2174,7 @@ function bind(){
 }
 
 /* ---------- Inicialização: se já houver sessão salva, pula direto pro painel ---------- */
+window.addEventListener?.('beforeunload',e=>{if(state.view==='wizard'&&state.qAnswers.some(isAnswered)){e.preventDefault();e.returnValue='';}});
 (async function init(){
  const params = new URLSearchParams(window.location.search);
  const pid = params.get('p');
