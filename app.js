@@ -6,10 +6,10 @@ const supabase = window.supabase.createClient(window.APP_CONFIG.SUPABASE_URL, wi
 const INSTRUMENT_META = {};
 
 function metaOf(k){return INSTRUMENT_META[k]||{status:'UNAVAILABLE',administrationBlocked:true,version:'unknown',note:'Instrumento não cadastrado.'};}
-const STATUS_MESSAGES=Object.freeze({VALID_OFFICIAL:'Resultado calculado conforme a versão identificada.',INCOMPLETE:'Aplicação incompleta — sem score.',LICENSE_REQUIRED:'Incorporação depende de autorização do titular.',UNAVAILABLE:'Aplicação indisponível: consulte a justificativa específica.',LEGACY_INVALID:'Aplicação histórica incompatível — dados preservados, sem recálculo.',INVALID_INPUT:'Respostas inválidas — sem score.'});
+const STATUS_MESSAGES=Object.freeze({VALID_OFFICIAL:'Resultado calculado conforme a versão identificada.',INCOMPLETE:'Aplicação incompleta — sem score.',LICENSE_REQUIRED:'Incorporação depende de autorização do titular.',UNAVAILABLE:'Aplicação indisponível: consulte a justificativa específica.',LEGACY_INVALID:'Aplicação histórica incompatível — dados preservados, sem recálculo.',INVALID_INPUT:'Respostas inválidas — sem score.',INTEGRITY_MISMATCH:'Divergência de integridade no resultado armazenado — escores abaixo recalculados das respostas originais.'});
 const SCORING_VERSION='4.0.0-versioned-clinimetry';
 const BLOCKED_MESSAGE='Instrumento indisponível para esta aplicação. Consulte a justificativa no painel profissional.';
-function statusLabel(s){return ({VALID_OFFICIAL:'Concluído',INCOMPLETE:'Incompleto',LICENSE_REQUIRED:'Autorização necessária',UNAVAILABLE:'Indisponível',LEGACY_INVALID:'Histórico incompatível',INVALID_INPUT:'Dados inválidos'})[s]||'Histórico incompatível';}
+function statusLabel(s){return ({VALID_OFFICIAL:'Concluído',INCOMPLETE:'Incompleto',LICENSE_REQUIRED:'Autorização necessária',UNAVAILABLE:'Indisponível',LEGACY_INVALID:'Histórico incompatível',INVALID_INPUT:'Dados inválidos',INTEGRITY_MISMATCH:'Divergência de integridade'})[s]||'Histórico incompatível';}
 function administrationLabel(k){return metaOf(k).note;}
 function canAdministerInstrument(k){return !!CURRENT_VALIDATED_INSTRUMENTS[k]&&metaOf(k).status==='VALID_OFFICIAL'&&!metaOf(k).administrationBlocked;}
 const ASSIGNMENT_ALIASES=Object.freeze({fabqpa:'fabq',sss:'wpi'});
@@ -54,25 +54,46 @@ function validateAndScore(k,a){
  if(result.n<meta.minAnswered||(q.complete&&!q.complete(a)))return {...result,status:'INCOMPLETE'};
  return {...q.score(cloneAnswers(a)),...result,status:'VALID_OFFICIAL'};
 }
+// JSONB may reorder object keys. Array order and primitive types remain significant.
+function canonicalize(value){
+ if(Array.isArray(value))return value.map(canonicalize);
+ if(value && typeof value==='object')return Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonicalize(value[key])]));
+ return value;
+}
+function stableStringify(value){return JSON.stringify(canonicalize(value));}
+function semanticEqual(a,b){
+ if(typeof a==='number' && typeof b==='number')return Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a-b)<=1e-9;
+ if(a===b)return true;
+ if(a===null||b===null||typeof a!=='object'||typeof b!=='object')return false;
+ if(Array.isArray(a)!==Array.isArray(b))return false;
+ if(Array.isArray(a)){
+  if(a.length!==b.length)return false;
+  for(let i=0;i<a.length;i++)if(!semanticEqual(a[i],b[i]))return false;
+  return true;
+ }
+ const keys=Object.keys(a);
+ return keys.length===Object.keys(b).length&&keys.every(key=>Object.prototype.hasOwnProperty.call(b,key)&&semanticEqual(a[key],b[key]));
+}
 function effectiveStatus(k,r){
  if(!r||r.instrumentVersion!==metaOf(k).version||r.scoringVersion!==SCORING_VERSION)return 'LEGACY_INVALID';
  if(!canAdministerInstrument(k))return metaOf(k).status;
- if(!['VALID_OFFICIAL','INCOMPLETE','INVALID_INPUT'].includes(r.status))return 'INVALID_INPUT';
  const checked=validateAndScore(k,r.rawAnswers);
- if(checked.status!==r.status)return checked.status==='VALID_OFFICIAL'?'INVALID_INPUT':checked.status;
- // A changed score cannot be presented as official; historical versions are never rescored.
- if(r.status==='VALID_OFFICIAL'&&(JSON.stringify(r.metrics)!==JSON.stringify(checked.metrics)||JSON.stringify(r.calculation)!==JSON.stringify(checked.calculation)))return 'INVALID_INPUT';
- return r.status;
+ // Schema failures concern inputs; audit differences concern persisted results.
+ if(checked.status!=='VALID_OFFICIAL')return checked.status;
+ if(r.status!=='VALID_OFFICIAL'||!semanticEqual(r.metrics,checked.metrics)||!semanticEqual(r.calculation,checked.calculation))return 'INTEGRITY_MISMATCH';
+ return checked.status;
 }
 function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function numberText(n){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:2});}
 function scoreLines(k,r){
- if(effectiveStatus(k,r)!=='VALID_OFFICIAL')return [STATUS_MESSAGES[effectiveStatus(k,r)]];
- const lines=(r.metrics||[]).map(m=>m.name+': '+numberText(m.value)+'/'+m.max+' — '+m.direction+(m.answered!==undefined?' (respondidos: '+m.answered+'/'+m.items+')':''));
- // Interpretive text also comes from the identified algorithm, never from an arbitrary database string.
+ const status=effectiveStatus(k,r);
+ if(!['VALID_OFFICIAL','INTEGRITY_MISMATCH'].includes(status))return [STATUS_MESSAGES[status]];
  const checked=validateAndScore(k,r.rawAnswers);
+ const lines=(checked.metrics||[]).map(m=>m.name+': '+numberText(m.value)+'/'+m.max+' — '+m.direction+(m.answered!==undefined?' (respondidos: '+m.answered+'/'+m.items+')':''));
  if(checked.interpretation)lines.push(checked.interpretation);
- return lines.length?lines:['Resultado registrado por região; sem score global.'];
+ if(!lines.length)lines.push('Resultado registrado por região; sem score global.');
+ if(status==='INTEGRITY_MISMATCH')lines.unshift(STATUS_MESSAGES[status]);
+ return lines;
 }
 function responseLines(k,r){
  const status=effectiveStatus(k,r),q=CURRENT_VALIDATED_INSTRUMENTS[k],meta=metaOf(k);
@@ -80,7 +101,8 @@ function responseLines(k,r){
  if(status==='LEGACY_INVALID'||status==='INVALID_INPUT'||!q){lines.push('Respostas originais: '+JSON.stringify(r.rawAnswers??r.answers??r.activities??null));return lines;}
  lines.push(...scoreLines(k,r),'Método: '+SCORING_VERSION,'Fonte: '+meta.source,'Validação brasileira: '+meta.brazilSource,'Regra de ausência: '+meta.missing);
  if(meta.note)lines.push('Escopo: '+meta.note);
- if(status==='VALID_OFFICIAL')lines.push('Memória de cálculo: '+JSON.stringify(r.calculation));
+ if(status==='VALID_OFFICIAL'||status==='INTEGRITY_MISMATCH')lines.push('Memória de cálculo recalculada: '+stableStringify(validateAndScore(k,r.rawAnswers).calculation));
+ if(status==='INTEGRITY_MISMATCH')lines.push('Auditoria persistida (não usada como escore): '+JSON.stringify({metrics:r.metrics,calculation:r.calculation,status:r.status}));
  r.rawAnswers.forEach((v,i)=>{
   const label=q.type==='sections'?q.data[i][0]:q.items[i];
   if(!isAnswered(v)){lines.push(label+': não respondido');return;}
@@ -1336,7 +1358,7 @@ function runSelfTests(){
   }
   const empty=Array(a.length).fill(null);check(k+' vazio',validateAndScore(k,empty).status==='INCOMPLETE');
   const na=cloneAnswers(a);na[0]='NA';check(k+' NA',validateAndScore(k,na).status===(q.answerPolicy.allowNA?'VALID_OFFICIAL':'INVALID_INPUT'));
-  const r=validateAndScore(k,a);r.metrics=[{name:'injetado',value:999,max:999}];check(k+' score adulterado',effectiveStatus(k,r)==='INVALID_INPUT');
+  const r=validateAndScore(k,a);r.metrics=[{name:'injetado',value:999,max:999}];check(k+' score adulterado',effectiveStatus(k,r)==='INTEGRITY_MISMATCH');
  }
 
  {let w=testFixture('whodas',2);w[0]=null;const r=validateAndScore('whodas',w);check('WHODAS 1 faltante imputado pela média',r.status==='VALID_OFFICIAL'&&near(r.metrics[0].value,60));
@@ -1380,6 +1402,41 @@ function runSelfTests(){
  a=[9,10,0,0,10,10,10,0,10,10];check('Örebro máximo 100',values('orebro',a)[0]===100);
  a=[4,5,5,5,5,5,5,5,5,5];check('Örebro corte 50',validateAndScore('orebro',a).interpretation.startsWith('De 1 a 50'));
  a[1]=6;check('Örebro corte 51',validateAndScore('orebro',a).interpretation.startsWith('Acima de 50'));
+
+ // Regression: JSONB key ordering and insignificant floating-point differences.
+ const reorderJson=value=>Array.isArray(value)?value.map(reorderJson):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).reverse().map(key=>[key,reorderJson(value[key])])):value;
+ const roundTripCases={
+  eva:[9,10,10,10],
+  psfs:[
+   {score:0,skipped:false,activity:'Atividades diárias como: registro de dados relevantes em relatórios'},
+   {score:0,skipped:false,activity:'Organização de reuniões periódicas produtivas com a equipe'},
+   {score:0,skipped:false,activity:'Junto às famílias, a coordenação deve comunicar a rotina escolar'}
+  ],
+  whodas:[4,4,4,4,4,4,4,3,3,4,4,4]
+ };
+ for(const [key,answers] of Object.entries(roundTripCases)){
+  const result=validateAndScore(key,answers);
+  const loaded=reorderJson(JSON.parse(JSON.stringify(result))),before=JSON.stringify(loaded);
+  check(key+' JSONB round-trip válido',effectiveStatus(key,loaded)==='VALID_OFFICIAL');
+  check(key+' JSONB mantém score',semanticEqual(loaded.metrics,result.metrics));
+  check(key+' leitura não altera auditoria',JSON.stringify(loaded)===before);
+  check(key+' relatório recuperado',!buildReportText({name:'Teste',created_at:'2020-01-01',responses:{[key]:loaded}}).includes('Respostas inválidas'));
+  loaded.metrics[0].value+=1e-12;
+  check(key+' tolerância numérica',effectiveStatus(key,loaded)==='VALID_OFFICIAL');
+  loaded.metrics[0].value+=0.01;
+  check(key+' divergência é integridade',effectiveStatus(key,loaded)==='INTEGRITY_MISMATCH');
+ }
+ check('PSFS zero é resposta válida',validateAndScore('psfs',roundTripCases.psfs).metrics.every(m=>m.value===0));
+ check('comparação profunda ignora ordem das chaves',semanticEqual({b:{y:2,x:1},a:[0,1]},{a:[0,1],b:{x:1,y:2}}));
+ check('arrays mantêm ordem',!semanticEqual([1,2],[2,1]));
+ check('números não são strings',!semanticEqual(0,'0'));
+ check('zero não é null',!semanticEqual(0,null));
+ check('zero não é undefined',!semanticEqual(0,undefined));
+ check('chave extra diverge',!semanticEqual({a:1},{a:1,b:0}));
+ check('números finitos somente',!semanticEqual(Infinity,Infinity)&&!semanticEqual(NaN,NaN));
+ check('limiar numérico pequeno',semanticEqual(50,50.00000000000001)&&!semanticEqual(50,50.00001));
+ check('serialização canônica',stableStringify({z:1,a:{b:2,a:3}})===stableStringify({a:{a:3,b:2},z:1}));
+
  const result={count,failed:failures.length,failures};
  if(failures.length)throw new Error('Autotestes: '+failures.join(' | '));
  return result;
@@ -1401,18 +1458,22 @@ async function dbCreatePatient(name, phone){
  return id;
 }
 async function dbSaveResponses(id, responses){
+ const checkedResponses={};
  for(const [k,r] of Object.entries(responses)){
-  if(!canAdministerInstrument(k)) throw new Error(BLOCKED_MESSAGE);
-  if(effectiveStatus(k,r)==='LEGACY_INVALID') throw new Error('Histórico não pode ser sobrescrito por esta rotina.');
+  if(!canAdministerInstrument(k))throw new Error(BLOCKED_MESSAGE);
+  if(effectiveStatus(k,r)==='LEGACY_INVALID')throw new Error('Histórico não pode ser sobrescrito por esta rotina.');
   const checked=validateAndScore(k,r.rawAnswers);
-  if(checked.status!=='VALID_OFFICIAL') throw new Error('INVALID_INPUT: '+answerErrors(k,r.rawAnswers).join('; '));
-  if(state.responsesLocal[k] && effectiveStatus(k,state.responsesLocal[k])==='LEGACY_INVALID') throw new Error('Histórico não pode ser sobrescrito. Gere uma nova atribuição.');
-  responses[k]=checked;
+  if(checked.status!=='VALID_OFFICIAL')throw new Error(checked.status+': '+answerErrors(k,r.rawAnswers).join('; '));
+  if(state.responsesLocal[k] && effectiveStatus(k,state.responsesLocal[k])==='LEGACY_INVALID')throw new Error('Histórico não pode ser sobrescrito. Gere uma nova atribuição.');
+  checkedResponses[k]=checked;
  }
- const persisted={...state.responsesLocal,...responses};
- const {data, error} = await supabase.rpc('save_submission_responses', {p_id:id, p_responses:persisted});
- if(error){ alert('Erro ao salvar: '+error.message); throw error; }
- if(data === 0) throw new Error('Nenhum registro atualizado; as respostas não foram confirmadas pelo servidor.');
+ const persisted=canonicalize(cloneAnswers({...state.responsesLocal,...checkedResponses}));
+ const {data,error}=await supabase.rpc('save_submission_responses',{p_id:id,p_responses:persisted});
+ if(error){alert('Erro ao salvar: '+error.message);throw error;}
+ if(data!==1)throw new Error('Nenhum registro atualizado; as respostas não foram confirmadas pelo servidor.');
+ // Only commit local state after the RPC confirms the write. Never restore pre-save results.
+ state.responsesLocal=cloneAnswers(persisted);
+ return cloneAnswers(persisted);
 }
 async function dbListAll(){
  const {data, error} = await supabase.from('submissions').select('*').order('created_at', {ascending:false});
@@ -1986,7 +2047,6 @@ function bind(){
    $('nextBtn').disabled = true; $('nextBtn').textContent='Salvando...';
    try { await dbSaveResponses(state.patientId, {[state.qKey]:result}); }
    catch(error){ console.error(error); $('nextBtn').disabled=false; $('nextBtn').textContent='Concluir'; return; }
-   state.responsesLocal[state.qKey] = result;
    state.view='justDone'; render();
   };
  }
