@@ -6,10 +6,10 @@ const supabase = window.supabase.createClient(window.APP_CONFIG.SUPABASE_URL, wi
 const INSTRUMENT_META = {};
 
 function metaOf(k){return INSTRUMENT_META[k]||{status:'UNAVAILABLE',administrationBlocked:true,version:'unknown',note:'Instrumento não cadastrado.'};}
-const STATUS_MESSAGES=Object.freeze({VALID_OFFICIAL:'Resultado calculado conforme a versão identificada.',INCOMPLETE:'Aplicação incompleta — sem score.',LICENSE_REQUIRED:'Incorporação depende de autorização do titular.',UNAVAILABLE:'Aplicação indisponível: consulte a justificativa específica.',LEGACY_INVALID:'Aplicação histórica incompatível — dados preservados, sem recálculo.',INVALID_INPUT:'Respostas inválidas — sem score.',INTEGRITY_MISMATCH:'Divergência de integridade no resultado armazenado — escores abaixo recalculados das respostas originais.'});
+const STATUS_MESSAGES=Object.freeze({VALID_OFFICIAL:'Resultado calculado conforme a versão identificada.',INCOMPLETE:'Aplicação incompleta — sem score.',LICENSE_REQUIRED:'Incorporação depende de autorização do titular.',UNAVAILABLE:'Aplicação indisponível: consulte a justificativa específica.',LEGACY_INVALID:'Aplicação histórica incompatível — dados preservados, sem recálculo.',INVALID_INPUT:'Respostas inválidas — sem score.'});
 const SCORING_VERSION='4.0.0-versioned-clinimetry';
 const BLOCKED_MESSAGE='Instrumento indisponível para esta aplicação. Consulte a justificativa no painel profissional.';
-function statusLabel(s){return ({VALID_OFFICIAL:'Concluído',INCOMPLETE:'Incompleto',LICENSE_REQUIRED:'Autorização necessária',UNAVAILABLE:'Indisponível',LEGACY_INVALID:'Histórico incompatível',INVALID_INPUT:'Dados inválidos',INTEGRITY_MISMATCH:'Divergência de integridade'})[s]||'Histórico incompatível';}
+function statusLabel(s){return ({VALID_OFFICIAL:'Concluído',INCOMPLETE:'Incompleto',LICENSE_REQUIRED:'Autorização necessária',UNAVAILABLE:'Indisponível',LEGACY_INVALID:'Histórico incompatível',INVALID_INPUT:'Dados inválidos'})[s]||'Histórico incompatível';}
 function administrationLabel(k){return metaOf(k).note;}
 function canAdministerInstrument(k){return !!CURRENT_VALIDATED_INSTRUMENTS[k]&&metaOf(k).status==='VALID_OFFICIAL'&&!metaOf(k).administrationBlocked;}
 const ASSIGNMENT_ALIASES=Object.freeze({fabqpa:'fabq',sss:'wpi'});
@@ -54,46 +54,25 @@ function validateAndScore(k,a){
  if(result.n<meta.minAnswered||(q.complete&&!q.complete(a)))return {...result,status:'INCOMPLETE'};
  return {...q.score(cloneAnswers(a)),...result,status:'VALID_OFFICIAL'};
 }
-// JSONB may reorder object keys. Array order and primitive types remain significant.
-function canonicalize(value){
- if(Array.isArray(value))return value.map(canonicalize);
- if(value && typeof value==='object')return Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonicalize(value[key])]));
- return value;
-}
-function stableStringify(value){return JSON.stringify(canonicalize(value));}
-function semanticEqual(a,b){
- if(typeof a==='number' && typeof b==='number')return Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a-b)<=1e-9;
- if(a===b)return true;
- if(a===null||b===null||typeof a!=='object'||typeof b!=='object')return false;
- if(Array.isArray(a)!==Array.isArray(b))return false;
- if(Array.isArray(a)){
-  if(a.length!==b.length)return false;
-  for(let i=0;i<a.length;i++)if(!semanticEqual(a[i],b[i]))return false;
-  return true;
- }
- const keys=Object.keys(a);
- return keys.length===Object.keys(b).length&&keys.every(key=>Object.prototype.hasOwnProperty.call(b,key)&&semanticEqual(a[key],b[key]));
-}
 function effectiveStatus(k,r){
  if(!r||r.instrumentVersion!==metaOf(k).version||r.scoringVersion!==SCORING_VERSION)return 'LEGACY_INVALID';
  if(!canAdministerInstrument(k))return metaOf(k).status;
+ if(!['VALID_OFFICIAL','INCOMPLETE','INVALID_INPUT'].includes(r.status))return 'INVALID_INPUT';
  const checked=validateAndScore(k,r.rawAnswers);
- // Schema failures concern inputs; audit differences concern persisted results.
- if(checked.status!=='VALID_OFFICIAL')return checked.status;
- if(r.status!=='VALID_OFFICIAL'||!semanticEqual(r.metrics,checked.metrics)||!semanticEqual(r.calculation,checked.calculation))return 'INTEGRITY_MISMATCH';
- return checked.status;
+ if(checked.status!==r.status)return checked.status==='VALID_OFFICIAL'?'INVALID_INPUT':checked.status;
+ // A changed score cannot be presented as official; historical versions are never rescored.
+ if(r.status==='VALID_OFFICIAL'&&(JSON.stringify(r.metrics)!==JSON.stringify(checked.metrics)||JSON.stringify(r.calculation)!==JSON.stringify(checked.calculation)))return 'INVALID_INPUT';
+ return r.status;
 }
 function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function numberText(n){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:2});}
 function scoreLines(k,r){
- const status=effectiveStatus(k,r);
- if(!['VALID_OFFICIAL','INTEGRITY_MISMATCH'].includes(status))return [STATUS_MESSAGES[status]];
+ if(effectiveStatus(k,r)!=='VALID_OFFICIAL')return [STATUS_MESSAGES[effectiveStatus(k,r)]];
+ const lines=(r.metrics||[]).map(m=>m.name+': '+numberText(m.value)+'/'+m.max+' — '+m.direction+(m.answered!==undefined?' (respondidos: '+m.answered+'/'+m.items+')':''));
+ // Interpretive text also comes from the identified algorithm, never from an arbitrary database string.
  const checked=validateAndScore(k,r.rawAnswers);
- const lines=(checked.metrics||[]).map(m=>m.name+': '+numberText(m.value)+'/'+m.max+' — '+m.direction+(m.answered!==undefined?' (respondidos: '+m.answered+'/'+m.items+')':''));
  if(checked.interpretation)lines.push(checked.interpretation);
- if(!lines.length)lines.push('Resultado registrado por região; sem score global.');
- if(status==='INTEGRITY_MISMATCH')lines.unshift(STATUS_MESSAGES[status]);
- return lines;
+ return lines.length?lines:['Resultado registrado por região; sem score global.'];
 }
 function responseLines(k,r){
  const status=effectiveStatus(k,r),q=CURRENT_VALIDATED_INSTRUMENTS[k],meta=metaOf(k);
@@ -101,8 +80,7 @@ function responseLines(k,r){
  if(status==='LEGACY_INVALID'||status==='INVALID_INPUT'||!q){lines.push('Respostas originais: '+JSON.stringify(r.rawAnswers??r.answers??r.activities??null));return lines;}
  lines.push(...scoreLines(k,r),'Método: '+SCORING_VERSION,'Fonte: '+meta.source,'Validação brasileira: '+meta.brazilSource,'Regra de ausência: '+meta.missing);
  if(meta.note)lines.push('Escopo: '+meta.note);
- if(status==='VALID_OFFICIAL'||status==='INTEGRITY_MISMATCH')lines.push('Memória de cálculo recalculada: '+stableStringify(validateAndScore(k,r.rawAnswers).calculation));
- if(status==='INTEGRITY_MISMATCH')lines.push('Auditoria persistida (não usada como escore): '+JSON.stringify({metrics:r.metrics,calculation:r.calculation,status:r.status}));
+ if(status==='VALID_OFFICIAL')lines.push('Memória de cálculo: '+JSON.stringify(r.calculation));
  r.rawAnswers.forEach((v,i)=>{
   const label=q.type==='sections'?q.data[i][0]:q.items[i];
   if(!isAnswered(v)){lines.push(label+': não respondido');return;}
@@ -116,9 +94,91 @@ function responseLines(k,r){
  return lines;
 }
 function renderItemDetail(k,r){return responseLines(k,r).map(t=>'<div style="padding:9px 0;border-bottom:1px dashed var(--line)">'+escapeHtml(t)+'</div>').join('');}
+/* ===== IFBr-A — Índice de Funcionalidade Brasileiro (Portaria Interministerial AGU/MPS/MF/SEDH/MP nº 1/2014) =====
+   Preenchido pelo profissional, não pelo paciente. Guardado na coluna própria "ifbr" (o paciente não tem acesso). */
+const IFBR_DOMAINS=[
+ {name:'Sensorial',acts:['Observar','Ouvir']},
+ {name:'Comunicação',acts:['Comunicar-se/Recepção de mensagens','Comunicar-se/Produção de mensagens','Conversar','Discutir','Utilização de dispositivos de comunicação à distância']},
+ {name:'Mobilidade',acts:['Mudar e manter a posição do corpo','Alcançar, transportar e mover objetos','Movimentos finos da mão','Deslocar-se dentro de casa','Deslocar-se dentro de edifícios que não a própria casa','Deslocar-se fora de sua casa e de outros edifícios','Utilizar transporte coletivo','Utilizar transporte individual como passageiro']},
+ {name:'Cuidados Pessoais',acts:['Lavar-se','Cuidar de partes do corpo','Regulação da micção','Regulação da defecação','Vestir-se','Comer','Beber','Capacidade de identificar agravos à saúde']},
+ {name:'Vida Doméstica',acts:['Preparar refeições tipo lanches','Cozinhar','Realizar tarefas domésticas','Manutenção e uso apropriado de objetos pessoais e utensílios da casa','Cuidar dos outros']},
+ {name:'Educação, Trabalho e Vida Econômica',acts:['Educação','Qualificação profissional','Trabalho remunerado','Fazer compras e contratar serviços','Administração de recursos econômicos pessoais']},
+ {name:'Socialização e Vida Comunitária',acts:['Regular o comportamento nas interações','Interagir de acordo com as regras sociais','Relacionamentos com estranhos','Relacionamentos familiares e com pessoas familiares','Relacionamentos íntimos','Socialização','Fazer as próprias escolhas','Vida Política e Cidadania']}];
+const IFBR_ACTS=[]; IFBR_DOMAINS.forEach((d,di)=>d.acts.forEach((a,ai)=>IFBR_ACTS.push({d:di+1,code:(di+1)+'.'+(ai+1),name:a})));
+const IFBR_BARRIERS=[['PT','Produtos e Tecnologia'],['AMB','Ambiente'],['AR','Apoio e Relacionamentos'],['AT','Atitudes'],['SSP','Serviços, Sistemas e Políticas']];
+const IFBR_TYPES=[['auditiva','Auditiva'],['intelectual','Intelectual/Cognitiva'],['motora','Física/Motora'],['visual','Visual'],['mental','Mental']];
+const IFBR_GROUPS=[
+ {key:'auditiva',label:'Auditiva',types:['auditiva'],domains:[2,7],emb:'A surdez ocorreu antes dos 6 anos'},
+ {key:'intelectual',label:'Intelectual-Cognitiva e Mental',types:['intelectual','mental'],domains:[5,7],emb:'Não pode ficar sozinho em segurança'},
+ {key:'motora',label:'Motora',types:['motora'],domains:[3,4],emb:'Desloca-se exclusivamente em cadeira de rodas'},
+ {key:'visual',label:'Visual',types:['visual'],domains:[3,5],emb:'A pessoa já não enxergava ao nascer'}];
+const IFBR_SCALE=[[25,'Não realiza a atividade ou é totalmente dependente de terceiros para realizá-la. Não participa de nenhuma etapa da atividade. Se é necessário o auxílio de duas ou mais pessoas o escore deve ser 25.'],[50,'Realiza a atividade com o auxílio de terceiros. O indivíduo participa de alguma etapa da atividade. Inclui preparo e supervisão.'],[75,'Realiza a atividade de forma adaptada, sendo necessário algum tipo de modificação, ou realiza a atividade de forma diferente da habitual ou mais lentamente. Com as adaptações e modificações não depende de terceiros: tem uma independência modificada.'],[100,'Realiza a atividade de forma independente, sem nenhum tipo de adaptação ou modificação, na velocidade habitual e em segurança.']];
+function ifbrEmpty(){ return {date:new Date().toISOString().slice(0,10),informant:'',types:{},emb:{},semAuxilio:{},own:Array(41).fill(null),ss:Array(41).fill(null),mp:Array(41).fill(null),barriers:Array.from({length:41},()=>[]),notes:''}; }
+function ifbrClassify(t){ return t<=5739?'Deficiência grave (≤ 5.739)':t<=6354?'Deficiência moderada (5.740–6.354)':t<=7584?'Deficiência leve (6.355–7.584)':'Pontuação insuficiente para concessão (≥ 7.585)'; }
+function ifbrApply(scores, draft){
+ const s=(scores||[]).slice();
+ if(s.length!==41||s.some(v=>![25,50,75,100].includes(v))) return {complete:false,filled:s.filter(v=>[25,50,75,100].includes(v)).length};
+ const idx=d=>IFBR_ACTS.map((a,i)=>a.d===d?i:-1).filter(i=>i>=0);
+ const adj=s.slice(), applied=[];
+ IFBR_GROUPS.forEach(g=>{
+  if(!g.types.some(t=>draft.types&&draft.types[t])) return;
+  const cond=g.domains.some(d=>idx(d).some(i=>s[i]===25||s[i]===50))||g.domains.some(d=>idx(d).every(i=>s[i]===75));
+  if(cond&&draft.emb&&draft.emb[g.key]){ g.domains.forEach(d=>{const m=Math.min(...idx(d).map(i=>s[i])); idx(d).forEach(i=>{adj[i]=Math.min(adj[i],m);});}); applied.push(g.label); }
+ });
+ return {complete:true,raw:s.reduce((a,b)=>a+b,0),total:adj.reduce((a,b)=>a+b,0),adjusted:adj,applied};
+}
+function ifbrSummary(draft){
+ const own=ifbrApply(draft.own,draft), ss=ifbrApply(draft.ss,draft), mp=ifbrApply(draft.mp,draft);
+ const out={own,ss,mp,divergences:[]};
+ if(own.complete){ out.projection=own.total*2; out.projectionClass=ifbrClassify(out.projection); }
+ if(ss.complete&&mp.complete){ out.inss=ss.total+mp.total; out.inssClass=ifbrClassify(out.inss); }
+ IFBR_ACTS.forEach((a,i)=>{ const o=draft.own[i]; if(o==null) return; const d=[]; if(draft.ss[i]!=null&&draft.ss[i]!==o) d.push('Serviço Social: '+draft.ss[i]); if(draft.mp[i]!=null&&draft.mp[i]!==o) d.push('Médico perito: '+draft.mp[i]); if(d.length) out.divergences.push(a.code+' '+a.name+' — sua pontuação: '+o+' · '+d.join(' · ')); });
+ return out;
+}
+function ifbrLines(p){
+ const f=p&&p.ifbr; if(!f) return [];
+ const s=ifbrSummary(f); const L=['='.repeat(60),'IFBr-A — AVALIAÇÃO DO ASSISTENTE TÉCNICO (Portaria Interministerial nº 1/2014)','Data da avaliação: '+(f.date||'-')+(f.informant?' · Informações prestadas por: '+f.informant:''),'='.repeat(60)];
+ const tipos=IFBR_TYPES.filter(([k])=>f.types&&f.types[k]).map(([,l])=>l); L.push('Tipo de deficiência considerado: '+(tipos.join(', ')||'não informado'));
+ if(s.own.complete){ L.push('Sua pontuação (1 avaliador, 41 atividades): '+s.own.total+' de 4.100'+(s.own.applied.length?' (após modelo Fuzzy: '+s.own.applied.join(', ')+'; antes do Fuzzy: '+s.own.raw+')':'')); L.push('Projeção na escala oficial (sua pontuação × 2, como se os dois avaliadores do INSS pontuassem igual): '+s.projection+' — '+s.projectionClass+'. A classificação oficial soma dois avaliadores (médico perito e serviço social); esta projeção não a substitui.'); }
+ else L.push('Sua pontuação: incompleta ('+s.own.filled+'/41 atividades pontuadas).');
+ if(s.inss!=null) L.push('Pontuação do INSS registrada (serviço social + médico perito, com Fuzzy): '+s.inss+' — '+s.inssClass+'.');
+ if(s.divergences.length){ L.push('','Divergências entre a sua avaliação e a do INSS:'); s.divergences.forEach(d=>L.push('- '+d)); }
+ L.push('','Pontuação por atividade (sua / INSS serviço social / INSS médico perito / barreiras):');
+ IFBR_ACTS.forEach((a,i)=>{ const b=(f.barriers&&f.barriers[i]||[]).map(c=>(IFBR_BARRIERS.find(x=>x[0]===c)||[c,c])[1]); L.push(a.code+' '+a.name+': '+(f.own[i]??'-')+' / '+(f.ss[i]??'-')+' / '+(f.mp[i]??'-')+(b.length?' / barreiras: '+b.join(', '):'')); });
+ if(f.notes) L.push('','Observações: '+f.notes);
+ L.push('','Fonte: Portaria Interministerial AGU/MPS/MF/SEDH/MP nº 1, de 27/01/2014 (DOU 30/01/2014), aplicada pela jurisprudência como vigente (ex.: TRF4, 2024). As descrições e exemplos detalhados de cada atividade constantes do anexo oficial devem ser consultados na Portaria.','');
+ return L;
+}
+function ifbrCardHtml(p){
+ const f=p.ifbr; let res='<span style="color:var(--muted)">Ainda não preenchido.</span>';
+ if(f){ const s=ifbrSummary(f); res = s.own.complete ? `Sua pontuação: <strong>${s.own.total}</strong>/4.100 · projeção: <strong>${s.projection}</strong> — ${escapeHtml(s.projectionClass)}${s.inss!=null?`<br>INSS registrado: <strong>${s.inss}</strong> — ${escapeHtml(s.inssClass)} · ${s.divergences.length} divergência(s)`:''}` : `Em andamento: ${s.own.filled}/41 atividades pontuadas.`; }
+ return `<div class="score-line" style="flex-direction:column;align-items:stretch;"><div class="sname">IFBr-A — sua avaliação de funcionalidade</div><div class="sdetail" style="margin-bottom:8px;">${res}</div><button class="btn btn-ghost" data-ifbr-open="${p.id}" style="font-size:13px;padding:10px;">📋 ${f?'Abrir / editar IFBr-A':'Preencher IFBr-A'}</button></div>`;
+}
+
+const CUSTOM_KEY='__custom';
+function customOf(p){ const c=p&&p.responses&&p.responses[CUSTOM_KEY]; return (c&&Array.isArray(c.questions)&&c.questions.length)?c:null; }
+function instrumentEntries(resp){ return Object.entries(resp||{}).filter(([k])=>k!==CUSTOM_KEY); }
+function customLines(c){
+ if(!c) return [];
+ const out=['='.repeat(60),'PERGUNTAS ESPECÍFICAS DO CASO',c.answeredAt?'Respondidas em: '+new Date(c.answeredAt).toLocaleString('pt-BR'):'Ainda não respondidas pelo paciente.','='.repeat(60)];
+ c.questions.forEach((q,i)=>{ out.push((i+1)+'. '+q,'Resposta: '+((c.answers&&c.answers[i])||'(sem resposta)'),''); });
+ return out;
+}
+function customHtml(p){
+ const c=customOf(p); if(!c) return '';
+ const body=c.questions.map((q,i)=>`<div style="padding:9px 0;border-bottom:1px dashed var(--line);"><div style="font-weight:600;font-size:13.5px;">${i+1}. ${escapeHtml(q)}</div><div style="font-size:13.5px;margin-top:3px;white-space:pre-wrap;">${c.answers&&c.answers[i]?escapeHtml(c.answers[i]):'<span style="color:var(--muted)">sem resposta</span>'}</div></div>`).join('');
+ return `<div class="score-line" style="flex-direction:column;align-items:stretch;"><div class="sname">Perguntas específicas do caso</div><div class="sdetail">${c.answeredAt?'Respondidas em '+new Date(c.answeredAt).toLocaleString('pt-BR'):'Aguardando resposta do paciente'}</div>${body}</div>`;
+}
+function customPending(){ const c=state.responsesLocal&&state.responsesLocal[CUSTOM_KEY]; return !!(c&&Array.isArray(c.questions)&&c.questions.length&&!c.answeredAt); }
+const SpeechRec = (typeof window!=='undefined') && (window.SpeechRecognition||window.webkitSpeechRecognition);
+let activeRec=null, activeRecIdx=null;
+function stopDictation(){ const r=activeRec; activeRec=null; activeRecIdx=null; if(r){ try{r.stop();}catch(e){} } }
+
 function buildReportText(p){
  const lines=['AVALIAÇÃO FUNCIONAL — '+p.name,'Registro criado em: '+new Date(p.created_at).toLocaleString('pt-BR'),''];
- Object.entries(p.responses||{}).forEach(([k,r])=>lines.push('='.repeat(60),(effectiveStatus(k,r)==='LEGACY_INVALID'?LEGACY_INSTRUMENTS[k]?.title:QUESTIONNAIRES[k]?.title)||k,'Status: '+statusLabel(effectiveStatus(k,r)),...responseLines(k,r),''));
+ instrumentEntries(p.responses).forEach(([k,r])=>lines.push('='.repeat(60),(effectiveStatus(k,r)==='LEGACY_INVALID'?LEGACY_INSTRUMENTS[k]?.title:QUESTIONNAIRES[k]?.title)||k,'Status: '+statusLabel(effectiveStatus(k,r)),...responseLines(k,r),''));
+ lines.push(...customLines(customOf(p)));
+ lines.push(...ifbrLines(p));
  return lines.join('\n');
 }
 
@@ -698,6 +758,8 @@ const LEGACY_SCHEMA = {
 };
 const ICT_DISEASE_CATEGORIES = Object.freeze(['Nenhuma','1 doença','2 doenças','3 doenças','4 doenças','5 ou mais doenças']);
 const ITEM_HELP = {
+ bctq:{11:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade? Se esta não for a mão que você usa para escrever, marque \"não se aplica\".",12:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",13:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",14:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",15:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",16:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",17:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",18:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?"},
+ lysholm:{0:"Você manca (anda puxando a perna) por causa do joelho?",1:"Você precisa de bengala ou muleta para andar?",2:"O joelho \"trava\" (fica preso e não dobra ou não estica) de repente? A última opção só vale se o joelho ficou travado durante um exame médico.",3:"O joelho \"falseia\" (falha, como se fosse sair do lugar ou fazer você cair)? Quando isso acontece?",4:"Quando a dor no joelho aparece?",5:"Quando o joelho incha?",6:"Como é subir escadas por causa do joelho?",7:"Como é agachar por causa do joelho? \"Não além de 90 graus\" quer dizer que você só consegue agachar até a metade."},
  eva:{
   0:'Pense em como está sua dor agora mesmo, neste momento, sem fazer nenhum esforço.',
   1:'Pense no momento em que a dor costuma ficar mais forte no seu dia (para muita gente, é de manhã ao levantar, ou à noite).',
@@ -1011,7 +1073,7 @@ register('eva',{
 },{version:'END-0-10-4-situacoes-v2',licenseStatus:'GENERIC_NUMERIC_RATING',source:'https://doi.org/10.1016/j.jpain.2004.10.004',brazilSource:'https://pubmed.ncbi.nlm.nih.gov/18923324/',missing:'Exige as 4 respostas.',note:'Escala numérica de dor de uso livre, aplicada em quatro contextos (repouso, pior e melhor momento do dia, esforço semelhante ao trabalho). Sem faixas universais de gravidade.'});
 
 register('psfs',{
- title:'PSFS — Escala Funcional Específica do Paciente',type:'psfs',items:['Atividade 1','Atividade 2','Atividade 3'],intro:'Identifique três atividades importantes que você não consegue fazer ou tem dificuldade para fazer em consequência do seu problema. Avalie sua capacidade atual: 0 = incapaz de realizar; 10 = capaz de realizar no mesmo nível de antes da lesão ou problema.',
+ title:'PSFS — Escala Funcional Específica do Paciente',type:'psfs',items:['Atividade 1','Atividade 2','Atividade 3'],intro:'Identifique três atividades importantes que você não consegue fazer ou tem dificuldade para fazer em consequência do seu problema. Avalie sua capacidade atual: 0 = incapaz de realizar; 10 = capaz de realizar no mesmo nível de antes da lesão ou problema. ATENÇÃO: aqui, quanto MAIOR a nota, MELHOR.',
  score:a=>({metrics:[...a.map((v,i)=>metric('Atividade '+(i+1)+' — '+v.activity,v.score,10,'Maior = melhor função')),metric('PSFS — média',sum(a.map(v=>v.score))/3,10,'Maior = melhor função')],calculation:{sum:sum(a.map(v=>v.score)),denominator:3}})
 },{version:'PSFS-BR-Costa-2008-three-activities-v1',licenseStatus:'CLINICAL_USE_ATTRIBUTION',source:'https://doi.org/10.3138/ptc.47.4.258',brazilSource:'https://pubmed.ncbi.nlm.nih.gov/18923324/',missing:'Três atividades nomeadas e pontuadas; sem imputação nem exclusão silenciosa de atividade.',note:'Stratford et al.; adaptação brasileira Costa et al., 2008. A seleção de atividades deve corresponder ao problema avaliado.'});
 
@@ -1170,6 +1232,41 @@ register('whodas',{
    interpretation:'Pontuação simples do manual da OMS (12–60). O próprio manual adverte que a pontuação simples é específica da amostra e não deve ser comparada entre populações; não há faixas oficiais de gravidade para ela. A pontuação complexa (0–100, baseada em teoria de resposta ao item) não é calculada aqui.'};}
 },{version:'WHODAS2-12itens-auto-OMS-UFTM2015-v1',licenseStatus:'WHO_OFFICIAL_PT_BR_MANUAL',source:'https://www.who.int/standards/classifications/international-classification-of-functioning-disability-and-health/who-disability-assessment-schedule',brazilSource:'ISBN 978-85-62599-51-4 (OMS/UFTM, 2015)',missing:'No máximo 1 item em branco (imputado pela média dos demais); 2 ou mais em branco = sem escore.',minAnswered:11,note:'Texto da versão de 12 itens auto-administrada do manual oficial em português (OMS 2010; tradução autorizada UFTM, Castro & Leite, 2015). As perguntas H1–H3 (número de dias), que não entram no escore, não foram incluídas. A OMS pede solicitação de permissão (permissions@who.int) para reprodução.'});
 
+register('bctq',{
+ title:'BCTQ — Questionário de Boston (túnel do carpo)',type:'likert',
+ about:'Sobre dor, formigamento e dificuldades na mão e no punho.',
+ intro:'As questões a seguir referem-se aos seus sintomas num período típico de 24 horas, durante as últimas duas semanas. Responda pensando na mão mais afetada. Se as duas mãos têm sintomas, avise o fisioterapeuta para receber um questionário para cada mão.',
+ items:["Qual a intensidade da dor na mão ou punho que você tem à noite?", "Quantas vezes a dor na mão ou punho acordou você durante uma noite típica nas duas últimas semanas?", "Você usualmente tem dor na mão ou punho durante o dia?", "Com que frequência você tem dor na mão ou punho durante o dia?", "Quanto tempo, em média, duram os episódios de dor durante o dia?", "Você tem adormecimento (perda da sensibilidade) em sua mão?", "Você tem fraqueza na sua mão ou punho?", "Você tem sensação de formigamento em sua mão?", "Qual a intensidade do adormecimento (perda da sensibilidade) ou do formigamento à noite?", "Com que frequência o adormecimento ou o formigamento acordaram você durante uma noite típica nas duas últimas semanas?", "Você tem dificuldade em pegar e usar pequenos objetos, tais como chaves ou canetas?", "Escrever", "Abotoar as roupas", "Segurar um livro enquanto lê", "Segurar o telefone", "Trabalhos domésticos", "Abrir tampa de um vidro", "Carregar sacos de supermercados", "Tomar banho e vestir-se"],
+ optsPerItem:[["Eu não tenho dor na mão ou no punho à noite", "Pouca dor", "Dor moderada", "Dor intensa", "Dor muito intensa"], ["Nenhuma", "Uma", "Duas a três vezes", "Quatro a cinco vezes", "Mais que cinco vezes"], ["Eu nunca tenho dor durante o dia", "Eu tenho pouca dor durante o dia", "Eu tenho dor moderada durante o dia", "Eu tenho dor intensa durante o dia", "Eu tenho dor muito intensa durante o dia"], ["Nunca", "Uma ou duas vezes por dia", "Três a cinco vezes por dia", "Mais que cinco vezes por dia", "A dor é constante"], ["Eu nunca tenho dor durante o dia", "Menos que 10 minutos", "De 10 a 60 minutos", "Mais que 60 minutos", "A dor é constante durante o dia"], ["Não", "Eu tenho pouco adormecimento", "Eu tenho adormecimento moderado", "Eu tenho adormecimento intenso", "Eu tenho adormecimento muito intenso"], ["Sem fraqueza", "Pouca fraqueza", "Fraqueza moderada", "Fraqueza intensa", "Fraqueza muito intensa"], ["Sem formigamento", "Pouco formigamento", "Formigamento moderado", "Formigamento intenso", "Formigamento muito intenso"], ["Eu não tenho adormecimento ou formigamento à noite", "Pouca", "Moderada", "Intensa", "Muito intensa"], ["Nenhuma", "Uma", "Duas a três vezes", "Quatro a cinco vezes", "Mais que cinco vezes"], ["Sem dificuldade", "Pouca dificuldade", "Dificuldade moderada", "Dificuldade intensa", "Dificuldade muito intensa"], ["Nenhuma dificuldade", "Pouca dificuldade", "Dificuldade moderada", "Dificuldade intensa", "Não pode realizar atividade de jeito nenhum, por causa dos sintomas das mãos e punhos"], ["Nenhuma dificuldade", "Pouca dificuldade", "Dificuldade moderada", "Dificuldade intensa", "Não pode realizar atividade de jeito nenhum, por causa dos sintomas das mãos e punhos"], ["Nenhuma dificuldade", "Pouca dificuldade", "Dificuldade moderada", "Dificuldade intensa", "Não pode realizar atividade de jeito nenhum, por causa dos sintomas das mãos e punhos"], ["Nenhuma dificuldade", "Pouca dificuldade", "Dificuldade moderada", "Dificuldade intensa", "Não pode realizar atividade de jeito nenhum, por causa dos sintomas das mãos e punhos"], ["Nenhuma dificuldade", "Pouca dificuldade", "Dificuldade moderada", "Dificuldade intensa", "Não pode realizar atividade de jeito nenhum, por causa dos sintomas das mãos e punhos"], ["Nenhuma dificuldade", "Pouca dificuldade", "Dificuldade moderada", "Dificuldade intensa", "Não pode realizar atividade de jeito nenhum, por causa dos sintomas das mãos e punhos"], ["Nenhuma dificuldade", "Pouca dificuldade", "Dificuldade moderada", "Dificuldade intensa", "Não pode realizar atividade de jeito nenhum, por causa dos sintomas das mãos e punhos"], ["Nenhuma dificuldade", "Pouca dificuldade", "Dificuldade moderada", "Dificuldade intensa", "Não pode realizar atividade de jeito nenhum, por causa dos sintomas das mãos e punhos"]],
+ complete:a=>a.slice(0,11).some(Number.isInteger)&&a.slice(11).some(Number.isInteger),
+ score:a=>{const m=arr=>{const v=arr.filter(Number.isInteger).map(x=>x+1);return {mean:v.reduce((s,x)=>s+x,0)/v.length,n:v.length};};const s=m(a.slice(0,11)),f=m(a.slice(11));
+  return {metrics:[metric('BCTQ — gravidade dos sintomas (EGS)',s.mean,5,'Maior = sintomas mais graves (1–5)',{min:1,answered:s.n,items:11}),metric('BCTQ — estado funcional (EEF)',f.mean,5,'Maior = maior dificuldade funcional (1–5)',{min:1,answered:f.n,items:8})],
+   calculation:{formula:'Média das respostas (1–5) em cada escala; perguntas sem resposta ou marcadas "não se aplica" são excluídas do cálculo.'},
+   interpretation:'Sem faixas oficiais de gravidade na versão brasileira. Cada escala varia de 1 (sem sintoma/dificuldade) a 5 (máximo).'};}
+},{version:'BCTQ-Brasil-Campos2003-v1',licenseStatus:'OPEN_ACCESS_ARTICLE',source:'https://doi.org/10.2106/00004623-199311000-00002',brazilSource:'https://doi.org/10.1590/S0004-282X2003000100009',missing:'Perguntas sem resposta ou "não se aplica" saem da média; cada escala precisa de ao menos uma resposta.',minAnswered:0,note:'Texto da versão brasileira validada (Campos et al., 2003), conforme reproduzida no Anexo 1 de Meirelles et al., Acta Ortop Bras 2006 (acesso aberto). Na alternativa 5 da pergunta 10, a fonte reproduzida traz "muito intensa", evidente erro de transcrição; foi usada "mais que cinco vezes", como na pergunta 2 e no original. Aplicar um questionário por mão.'});
+CURRENT_VALIDATED_INSTRUMENTS.bctq.answerPolicy.allowNA=true;
+
+register('lysholm',{
+ title:'Lysholm — questionário específico para sintomas do joelho',type:'likert',
+ about:'Sobre sintomas e limitações do seu joelho.',
+ intro:'Estas perguntas são sobre o seu joelho afetado. Para cada tema, escolha a opção que melhor descreve como você está hoje.',
+ items:["Mancar", "Apoio", "Travamento", "Instabilidade", "Dor", "Inchaço", "Subindo escadas", "Agachamento"],
+ optsPerItem:[["Nunca", "Leve ou periodicamente", "Intenso e constantemente"], ["Nenhum", "Bengala ou muleta", "Impossível"], ["Nenhum travamento ou sensação de travamento", "Tem sensação, mas sem travamento", "Travamento ocasional", "Frequente", "Articulação (junta) travada no exame"], ["Nunca falseia", "Raramente, durante atividades atléticas ou outros exercícios pesados", "Frequentemente durante atividades atléticas ou outros exercícios pesados (ou incapaz de participação)", "Ocasionalmente em atividades diárias", "Frequentemente em atividades diárias", "Em cada passo"], ["Nenhuma", "Inconstante ou leve durante exercícios pesados", "Marcada durante exercícios pesados", "Marcada durante ou após caminhar mais de 2 Km", "Marcada durante ou após caminhar menos de 2 Km", "Constante"], ["Nenhum", "Com exercícios pesados", "Com exercícios comuns", "Constante"], ["Nenhum problema", "Levemente prejudicado", "Um degrau cada vez", "Impossível"], ["Nenhum problema", "Levemente prejudicado", "Não além de 90 graus", "Impossível"]],
+ score:a=>{const P=[[5, 3, 0], [5, 2, 0], [15, 10, 6, 2, 0], [25, 20, 15, 10, 5, 0], [25, 20, 15, 10, 5, 0], [10, 6, 2, 0], [10, 6, 2, 0], [5, 4, 2, 0]];const s=a.reduce((acc,v,i)=>acc+P[i][v],0);const cls=s>=95?'excelente (95–100)':s>=84?'bom (84–94)':s>=65?'regular (65–83)':'ruim (≤64)';
+  return {metrics:[metric('Lysholm',s,100,'Maior = melhor (0–100)')],calculation:{sum:s,formula:'Soma dos pontos de cada item (mancar 5, apoio 5, travamento 15, instabilidade 25, dor 25, inchaço 10, escadas 10, agachamento 5).'},
+   interpretation:'Classificação descrita na versão brasileira (Peccin et al., 2006): '+cls+'.'};}
+},{version:'Lysholm-Brasil-Peccin2006-v1',licenseStatus:'OPEN_ACCESS_ARTICLE',source:'https://doi.org/10.1177/036354658201000306',brazilSource:'https://doi.org/10.1590/S1413-78522006000500008',missing:'8/8; sem imputação.',note:'Itens e pontuação do Quadro 1 da versão brasileira (Peccin et al., 2006, acesso aberto). A validação brasileira foi feita por entrevista; as explicações em linguagem simples (💡) são do sistema, não do instrumento. A opção "articulação travada no exame" depende de observação clínica.'});
+
+register('pcl5',{
+ title:'PCL-5 — Lista de verificação de estresse pós-traumático',type:'likert',
+ about:'Sobre como você tem se sentido depois de uma experiência muito estressante, como um acidente.',
+ intro:'Abaixo há uma lista de problemas que as pessoas às vezes apresentam em resposta a uma experiência muito estressante. Pensando em seu pior evento (por exemplo, o acidente), leia cuidadosamente cada problema e escolha a resposta que indica o quanto você tem sido incomodado por este problema no último mês.',
+ items:["Lembranças indesejáveis, perturbadoras e repetitivas da experiência estressante?", "Sonhos perturbadores e repetitivos com a experiência estressante?", "De repente, sentindo ou agindo como se a experiência estressante estivesse, de fato, acontecendo de novo (como se você estivesse revivendo-a, de verdade, lá no passado)?", "Sentir-se muito chateado quando algo lembra você da experiência estressante?", "Ter reações físicas intensas quando algo lembra você da experiência estressante (por exemplo, coração apertado, dificuldades para respirar, suor excessivo)?", "Evitar lembranças, pensamentos, ou sentimentos relacionados à experiência estressante?", "Evitar lembranças externas da experiência estressante (por exemplo, pessoas, lugares, conversas, atividades, objetos ou situações)?", "Não conseguir se lembrar de partes importantes da experiência estressante?", "Ter crenças negativas intensas sobre você, outras pessoas ou o mundo (por exemplo, ter pensamentos tais como: “Eu sou ruim”, “existe algo seriamente errado comigo”, “ninguém é confiável”, “o mundo todo é perigoso”)?", "Culpar a si mesmo ou aos outros pela experiência estressante ou pelo que aconteceu depois dela?", "Ter sentimentos negativos intensos como medo, pavor, raiva, culpa ou vergonha?", "Perder o interesse em atividades que você costumava apreciar?", "Sentir-se distante ou isolado das outras pessoas?", "Dificuldades para vivenciar sentimentos positivos (por exemplo, ser incapaz de sentir felicidade ou sentimentos amorosos por pessoas próximas a você)?", "Comportamento irritado, explosões de raiva ou agir agressivamente?", "Correr muitos riscos ou fazer coisas que podem lhe causar algum mal?", "Ficar “super” alerta, vigilante ou de sobreaviso?", "Sentir-se apreensivo ou assustado facilmente?", "Ter dificuldades para se concentrar?", "Problemas para adormecer ou continuar dormindo?"],
+ opts:['De modo nenhum','Um pouco','Moderadamente','Muito','Extremamente'],
+ score:a=>{const s=sum(a);return {metrics:[metric('PCL-5',s,80,'Maior = mais sintomas de estresse pós-traumático (0–80)')],calculation:{sum:s,formula:'Soma dos 20 itens (0–4 cada).'},
+  interpretation:'Instrumento de rastreio; não estabelece diagnóstico. Nenhum ponto de corte foi adotado automaticamente pelo sistema; o diagnóstico de TEPT exige avaliação clínica especializada.'};}
+},{version:'PCL5-Brasil-Osorio2017-v1',licenseStatus:'PUBLIC_DOMAIN',source:'https://www.ptsd.va.gov/professional/assessment/adult-sr/ptsd-checklist.asp',brazilSource:'https://doi.org/10.1590/0101-60830000000107',missing:'20/20; sem imputação.',note:'Texto da versão brasileira autorizada (Osório et al., 2017). PCL-5 é de domínio público (National Center for PTSD). A lista de eventos de vida e o Critério A, que acompanham o formulário estendido, não foram incluídos.'});
+
 register('phq9',{
  title:'PHQ-9 — Questionário sobre a Saúde do Paciente (depressão)',type:'likert',
  about:'Sobre como você tem se sentido emocionalmente nas últimas duas semanas.',
@@ -1305,7 +1402,7 @@ for(const [alias,target] of Object.entries(ASSIGNMENT_ALIASES))INSTRUMENT_META[a
 
 const QUESTIONNAIRES={...LEGACY_INSTRUMENTS,...CURRENT_VALIDATED_INSTRUMENTS};
 
-const QORDER = ["odi","ndi","tsk13","quickdash","spadi","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","sfi","nmq","ict","fiqr","wpi","sss","hoos","koos","fss","psqi","hit6","fabqpa","comi","hads","phq9","gad7","csi","orebro","ess","chalder","sf36","masq"];
+const QORDER = ["odi","ndi","tsk13","quickdash","spadi","bctq","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","lysholm","sfi","nmq","ict","fiqr","wpi","sss","hoos","koos","fss","psqi","hit6","fabqpa","comi","hads","phq9","gad7","pcl5","csi","orebro","ess","chalder","sf36","masq"];
 
 /* Autotestes executáveis sem rede. Fixtures não utilizam o próprio algoritmo
    como oráculo. Para executar no navegador: ?devtest=1. */
@@ -1325,7 +1422,7 @@ function runSelfTests(){
  const near=(a,b)=>Math.abs(a-b)<1e-9;
  const values=(k,a)=>validateAndScore(k,a).metrics?.map(m=>m.value);
  const expected={orebro:[[31],[50],[70]],
-  sfi:[[100],[50],[0]],fabq:[[0,0],[12,21],[24,42]],rmdq:[[0],[0],[24]],eva:[[0,0,0,0],[5,5,5,5],[10,10,10,10]],phq9:[[0],[9],[27]],whodas:[[12],[36],[60]],spadi:[[0,0,0],[50,50,50],[100,100,100]],gad7:[[0],[7],[21]],
+  sfi:[[100],[50],[0]],fabq:[[0,0],[12,21],[24,42]],rmdq:[[0],[0],[24]],eva:[[0,0,0,0],[5,5,5,5],[10,10,10,10]],phq9:[[0],[9],[27]],whodas:[[12],[36],[60]],bctq:[[1,1],[3,3],[5,5]],lysholm:[[100],[57],[0]],pcl5:[[0],[40],[80]],spadi:[[0,0,0],[50,50,50],[100,100,100]],gad7:[[0],[7],[21]],
   psfs:[[0,0,0,0],[5,5,5,5],[10,10,10,10]],lefs:[[0],[40],[80]],ict:[[7],[35],[49]],csi:[[0],[50],[100]],
   tsk13:[[13],[26],[52]],dn4:[[0],[0],[7]],wiq:[[100,100,100],[50,50,50],[0,0,0]],chalder:[[0],[0],[11]],comi:[[0],[5],[10]],
   sf36:[[0,0,0,50,40,50,100,60],[50,0,0,50,48,50,55,50],[100,100,100,50,60,50,0,40]]
@@ -1353,17 +1450,31 @@ function runSelfTests(){
     check(k+' inválido '+i+' '+JSON.stringify(value),validateAndScore(k,bad).status==='INVALID_INPUT');
    }
    const missing=cloneAnswers(a);missing[i]=null;const r=validateAndScore(k,missing);
-   if(k==='sf36'||k==='whodas')check(k+' missing permitido '+i,r.status==='VALID_OFFICIAL');
+   if(k==='sf36'||k==='whodas'||k==='bctq')check(k+' missing permitido '+i,r.status==='VALID_OFFICIAL');
    else check(k+' missing proibido '+i,r.status==='INCOMPLETE'&&!r.metrics);
   }
   const empty=Array(a.length).fill(null);check(k+' vazio',validateAndScore(k,empty).status==='INCOMPLETE');
   const na=cloneAnswers(a);na[0]='NA';check(k+' NA',validateAndScore(k,na).status===(q.answerPolicy.allowNA?'VALID_OFFICIAL':'INVALID_INPUT'));
-  const r=validateAndScore(k,a);r.metrics=[{name:'injetado',value:999,max:999}];check(k+' score adulterado',effectiveStatus(k,r)==='INTEGRITY_MISMATCH');
+  const r=validateAndScore(k,a);r.metrics=[{name:'injetado',value:999,max:999}];check(k+' score adulterado',effectiveStatus(k,r)==='INVALID_INPUT');
  }
 
  {let w=testFixture('whodas',2);w[0]=null;const r=validateAndScore('whodas',w);check('WHODAS 1 faltante imputado pela média',r.status==='VALID_OFFICIAL'&&near(r.metrics[0].value,60));
   w[1]=null;check('WHODAS 2 faltantes sem escore',validateAndScore('whodas',w).status==='INCOMPLETE');
   let m=testFixture('whodas',0);m[0]=null;m[1]=4;const r2=validateAndScore('whodas',m);check('WHODAS imputação média exata',near(r2.metrics[0].value,(10+5)+(15/11)));}
+ {const fake={name:'Teste',created_at:new Date().toISOString(),responses:{[CUSTOM_KEY]:{questions:['Pergunta A?','Pergunta B?'],answers:['Resposta A','Resposta B'],answeredAt:new Date().toISOString()}}};
+  check('Perguntas: não entram como questionário',instrumentEntries(fake.responses).length===0);
+  const txt=buildReportText(fake); check('Perguntas: aparecem no relatório',txt.includes('Pergunta B?')&&txt.includes('Resposta B'));
+  check('Perguntas: aparecem no painel',customHtml(fake).includes('Resposta A'));}
+ {const f=ifbrEmpty(); f.own=Array(41).fill(100); let s=ifbrSummary(f);
+  check('IFBr: máximo 4100',s.own.total===4100); check('IFBr: projeção 8200 insuficiente',s.projection===8200&&s.projectionClass.startsWith('Pontuação insuficiente'));
+  f.own=Array(41).fill(25); s=ifbrSummary(f); check('IFBr: mínimo 1025, projeção grave',s.own.total===1025&&s.projectionClass.startsWith('Deficiência grave'));
+  check('IFBr: faixas oficiais',ifbrClassify(5739).startsWith('Deficiência grave')&&ifbrClassify(5740).startsWith('Deficiência moderada')&&ifbrClassify(6354).startsWith('Deficiência moderada')&&ifbrClassify(6355).startsWith('Deficiência leve')&&ifbrClassify(7584).startsWith('Deficiência leve')&&ifbrClassify(7585).startsWith('Pontuação insuficiente'));
+  const g=ifbrEmpty(); g.own=Array(41).fill(100); const mob=IFBR_ACTS.map((a,i)=>a.d===3?i:-1).filter(i=>i>=0), cui=IFBR_ACTS.map((a,i)=>a.d===4?i:-1).filter(i=>i>=0);
+  g.own[mob[0]]=50; g.own[cui[0]]=75; g.types={motora:true}; g.emb={motora:true};
+  let r=ifbrApply(g.own,g); check('IFBr Fuzzy motora: Mobilidade toda vira 50',mob.every(i=>r.adjusted[i]===50)); check('IFBr Fuzzy motora: Cuidados todo vira 75',cui.every(i=>r.adjusted[i]===75)); check('IFBr Fuzzy: total recalculado',r.total===4100-50-25-7*50-7*25);
+  g.emb={motora:false}; r=ifbrApply(g.own,g); check('IFBr: sem questão emblemática, sem Fuzzy',r.total===4100-50-25&&!r.applied.length);
+  g.ss=g.own.slice(); g.mp=g.own.slice(); g.mp[0]=75; s=ifbrSummary(g); check('IFBr: divergência detectada',s.divergences.length===1&&s.inss===(4100-75)*2-25);
+  const txt=buildReportText({name:'T',created_at:new Date().toISOString(),responses:{},ifbr:g}); check('IFBr: aparece no relatório',txt.includes('IFBr-A')&&txt.includes('Divergências'));}
  let a=Array(36).fill(null);[3,13,17,23,24,20,21,1].forEach(n=>a[n-1]=0);
  check('RAND um item em cada domínio',validateAndScore('sf36',a).status==='VALID_OFFICIAL');a[2]=null;check('RAND domínio vazio',validateAndScore('sf36',a).status==='INCOMPLETE');
  a=testFixture('fabq',0);[0,7,12,13,15].forEach(i=>a[i]=6);check('FABQ exclusões',values('fabq',a).every(v=>v===0));
@@ -1402,41 +1513,6 @@ function runSelfTests(){
  a=[9,10,0,0,10,10,10,0,10,10];check('Örebro máximo 100',values('orebro',a)[0]===100);
  a=[4,5,5,5,5,5,5,5,5,5];check('Örebro corte 50',validateAndScore('orebro',a).interpretation.startsWith('De 1 a 50'));
  a[1]=6;check('Örebro corte 51',validateAndScore('orebro',a).interpretation.startsWith('Acima de 50'));
-
- // Regression: JSONB key ordering and insignificant floating-point differences.
- const reorderJson=value=>Array.isArray(value)?value.map(reorderJson):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).reverse().map(key=>[key,reorderJson(value[key])])):value;
- const roundTripCases={
-  eva:[9,10,10,10],
-  psfs:[
-   {score:0,skipped:false,activity:'Atividades diárias como: registro de dados relevantes em relatórios'},
-   {score:0,skipped:false,activity:'Organização de reuniões periódicas produtivas com a equipe'},
-   {score:0,skipped:false,activity:'Junto às famílias, a coordenação deve comunicar a rotina escolar'}
-  ],
-  whodas:[4,4,4,4,4,4,4,3,3,4,4,4]
- };
- for(const [key,answers] of Object.entries(roundTripCases)){
-  const result=validateAndScore(key,answers);
-  const loaded=reorderJson(JSON.parse(JSON.stringify(result))),before=JSON.stringify(loaded);
-  check(key+' JSONB round-trip válido',effectiveStatus(key,loaded)==='VALID_OFFICIAL');
-  check(key+' JSONB mantém score',semanticEqual(loaded.metrics,result.metrics));
-  check(key+' leitura não altera auditoria',JSON.stringify(loaded)===before);
-  check(key+' relatório recuperado',!buildReportText({name:'Teste',created_at:'2020-01-01',responses:{[key]:loaded}}).includes('Respostas inválidas'));
-  loaded.metrics[0].value+=1e-12;
-  check(key+' tolerância numérica',effectiveStatus(key,loaded)==='VALID_OFFICIAL');
-  loaded.metrics[0].value+=0.01;
-  check(key+' divergência é integridade',effectiveStatus(key,loaded)==='INTEGRITY_MISMATCH');
- }
- check('PSFS zero é resposta válida',validateAndScore('psfs',roundTripCases.psfs).metrics.every(m=>m.value===0));
- check('comparação profunda ignora ordem das chaves',semanticEqual({b:{y:2,x:1},a:[0,1]},{a:[0,1],b:{x:1,y:2}}));
- check('arrays mantêm ordem',!semanticEqual([1,2],[2,1]));
- check('números não são strings',!semanticEqual(0,'0'));
- check('zero não é null',!semanticEqual(0,null));
- check('zero não é undefined',!semanticEqual(0,undefined));
- check('chave extra diverge',!semanticEqual({a:1},{a:1,b:0}));
- check('números finitos somente',!semanticEqual(Infinity,Infinity)&&!semanticEqual(NaN,NaN));
- check('limiar numérico pequeno',semanticEqual(50,50.00000000000001)&&!semanticEqual(50,50.00001));
- check('serialização canônica',stableStringify({z:1,a:{b:2,a:3}})===stableStringify({a:{a:3,b:2},z:1}));
-
  const result={count,failed:failures.length,failures};
  if(failures.length)throw new Error('Autotestes: '+failures.join(' | '));
  return result;
@@ -1458,22 +1534,18 @@ async function dbCreatePatient(name, phone){
  return id;
 }
 async function dbSaveResponses(id, responses){
- const checkedResponses={};
  for(const [k,r] of Object.entries(responses)){
-  if(!canAdministerInstrument(k))throw new Error(BLOCKED_MESSAGE);
-  if(effectiveStatus(k,r)==='LEGACY_INVALID')throw new Error('Histórico não pode ser sobrescrito por esta rotina.');
+  if(!canAdministerInstrument(k)) throw new Error(BLOCKED_MESSAGE);
+  if(effectiveStatus(k,r)==='LEGACY_INVALID') throw new Error('Histórico não pode ser sobrescrito por esta rotina.');
   const checked=validateAndScore(k,r.rawAnswers);
-  if(checked.status!=='VALID_OFFICIAL')throw new Error(checked.status+': '+answerErrors(k,r.rawAnswers).join('; '));
-  if(state.responsesLocal[k] && effectiveStatus(k,state.responsesLocal[k])==='LEGACY_INVALID')throw new Error('Histórico não pode ser sobrescrito. Gere uma nova atribuição.');
-  checkedResponses[k]=checked;
+  if(checked.status!=='VALID_OFFICIAL') throw new Error('INVALID_INPUT: '+answerErrors(k,r.rawAnswers).join('; '));
+  if(state.responsesLocal[k] && effectiveStatus(k,state.responsesLocal[k])==='LEGACY_INVALID') throw new Error('Histórico não pode ser sobrescrito. Gere uma nova atribuição.');
+  responses[k]=checked;
  }
- const persisted=canonicalize(cloneAnswers({...state.responsesLocal,...checkedResponses}));
- const {data,error}=await supabase.rpc('save_submission_responses',{p_id:id,p_responses:persisted});
- if(error){alert('Erro ao salvar: '+error.message);throw error;}
- if(data!==1)throw new Error('Nenhum registro atualizado; as respostas não foram confirmadas pelo servidor.');
- // Only commit local state after the RPC confirms the write. Never restore pre-save results.
- state.responsesLocal=cloneAnswers(persisted);
- return cloneAnswers(persisted);
+ const persisted={...state.responsesLocal,...responses};
+ const {data, error} = await supabase.rpc('save_submission_responses', {p_id:id, p_responses:persisted});
+ if(error){ alert('Erro ao salvar: '+error.message); throw error; }
+ if(data === 0) throw new Error('Nenhum registro atualizado; as respostas não foram confirmadas pelo servidor.');
 }
 async function dbListAll(){
  const {data, error} = await supabase.from('submissions').select('*').order('created_at', {ascending:false});
@@ -1494,11 +1566,14 @@ async function authCurrentUser(){
  return data ? data.user : null;
 }
 
-async function dbCreateAssignment(name, phone, assignedKeys){
+async function dbCreateAssignment(name, phone, assignedKeys, customQuestions){
  if(Array.isArray(assignedKeys)) assignedKeys=[...new Set(assignedKeys.map(k=>ASSIGNMENT_ALIASES[k]||k))];
- if(!Array.isArray(assignedKeys) || !assignedKeys.length || assignedKeys.some(k=>!canAdministerInstrument(k))) throw new Error(BLOCKED_MESSAGE);
+ customQuestions=(customQuestions||[]).map(s=>String(s).trim()).filter(Boolean).slice(0,40);
+ if(!Array.isArray(assignedKeys) || assignedKeys.some(k=>!canAdministerInstrument(k))) throw new Error(BLOCKED_MESSAGE);
+ if(!assignedKeys.length && !customQuestions.length) throw new Error('Selecione ao menos um questionário ou escreva ao menos uma pergunta.');
  const id = newUuid();
- const {error} = await supabase.from('submissions').insert({id, name, phone, responses:{}, assigned:assignedKeys});
+ const responses = customQuestions.length ? {[CUSTOM_KEY]:{questions:customQuestions,answers:[],answeredAt:null}} : {};
+ const {error} = await supabase.from('submissions').insert({id, name, phone, responses, assigned:assignedKeys});
  if(error){ alert('Erro ao gerar link: '+error.message); throw error; }
  return id;
 }
@@ -1599,6 +1674,7 @@ list(){
    <p class="sub">Responda cada um destes. Quando terminar, pode fechar a página — seu fisioterapeuta já recebe os resultados.</p>
    ${(state.assignedKeys||[]).some(k=>!canAdministerInstrument(k))?`<p class="sub">Há instrumentos bloqueados nesta atribuição. ${BLOCKED_MESSAGE} Entre em contato com o profissional responsável.</p>`:''}
    ${rows}
+   ${(state.responsesLocal&&state.responsesLocal[CUSTOM_KEY]&&(state.responsesLocal[CUSTOM_KEY].questions||[]).length)?`<div class="qcard" id="customCard"><div><div class="qcard-title">Perguntas do seu fisioterapeuta</div><div class="qcard-sub">Responda escrevendo ou falando</div></div><span class="badge ${customPending()?'badge-pending':'badge-done'}">${customPending()?'pendente':'respondido'}</span></div>`:''}
    <button class="btn btn-ghost" id="finishBtn" style="width:100%;margin-top:10px;">Concluir e enviar</button>
  </main>`;
 },
@@ -1607,11 +1683,23 @@ instructions(){
  const q = QUESTIONNAIRES[state.qKey];
  return `<div class="topbar"><div class="brand">${q.title}<small>Antes de começar</small></div></div>
  <main>
+   <div style="background:var(--r2-bg);border:1.5px solid var(--r2-txt);border-radius:12px;padding:16px 18px;margin-bottom:16px;">
+     <div style="font-weight:700;font-size:16px;margin-bottom:8px;">⚠️ Responda com sinceridade</div>
+     <p style="margin:0 0 8px;font-size:15px;line-height:1.5;">Marque exatamente como você está <strong>hoje</strong>. <strong>Não aumente e não diminua nada.</strong></p>
+     <p style="margin:0 0 8px;font-size:15px;line-height:1.5;">Suas respostas são comparadas com o exame, com os seus documentos médicos e com as suas outras respostas. Respostas exageradas ou que não correspondem à realidade <strong>enfraquecem o seu laudo</strong>, em vez de ajudar.</p>
+     <p style="margin:0;font-size:15px;line-height:1.5;">Se não entender alguma pergunta, pergunte ao seu fisioterapeuta antes de responder.</p>
+   </div>
    <div class="card">
      <p class="sub" style="margin-bottom:14px;">${escapeHtml(q.intro||'Observe o período indicado em cada pergunta.')}</p>
      <p class="sub" style="margin-bottom:14px;">Não existe resposta certa ou errada. Responda com sinceridade, mesmo que a resposta pareça leve ou grave. Observe a janela de tempo de cada instrumento.</p>
      <p class="sub" style="margin-bottom:0;">Se tiver dúvida sobre o que uma pergunta quer dizer, pergunte antes de responder.</p>
-     ${state.qKey==='psfs' ? `<div style="margin-top:16px;padding-top:16px;border-top:1px dashed var(--line);"><p class="sub" style="margin-bottom:0;">Pense em atividades do seu dia a dia que ficaram difíceis por causa do seu problema de saúde. Pode ser qualquer coisa: uma tarefa em casa, no trabalho, um hobby, um movimento específico. Escolha as que realmente afetam sua rotina.</p></div>` : ''}
+     ${state.qKey==='psfs' ? `<div style="margin-top:16px;padding-top:16px;border-top:1px dashed var(--line);"><p class="sub" style="margin-bottom:0;">Pense em atividades do seu dia a dia que ficaram difíceis por causa do seu problema de saúde. Pode ser qualquer coisa: uma tarefa em casa, no trabalho, um hobby, um movimento específico. Escolha as que realmente afetam sua rotina.</p></div>`+`<div style="background:#EEF1F7;border:2px solid var(--navy);border-radius:12px;padding:16px 18px;margin-top:16px;">
+     <div style="font-weight:700;font-size:16px;margin-bottom:8px;">📌 Atenção: neste questionário a nota funciona ao contrário dos outros</div>
+     <p style="margin:0 0 6px;font-size:15px;line-height:1.5;"><strong>Quanto MAIOR a nota, MELHOR você consegue fazer a atividade.</strong></p>
+     <p style="margin:0 0 4px;font-size:15px;">🔴 <strong>0</strong> = NÃO CONSIGO fazer de jeito nenhum</p>
+     <p style="margin:0 0 4px;font-size:15px;">🟡 <strong>5</strong> = consigo fazer pela metade, com bastante dificuldade</p>
+     <p style="margin:0;font-size:15px;">🟢 <strong>10</strong> = CONSIGO fazer normalmente, como antes do problema</p>
+   </div>` : ''}
    </div>
    <button class="btn btn-primary" id="startQBtn" style="width:100%;">Entendi, começar</button>
  </main>`;
@@ -1659,11 +1747,12 @@ wizard(){
    ${skipped ? `<p class="sub">Você optou por não citar essa atividade. Pode seguir para a próxima tela.</p>` : `
    <label class="field">Nome da atividade</label>
    <input type="text" id="psfsActivity" placeholder="Ex.: subir escadas, carregar sacola de compras..." value="${escapeHtml(existing.activity||'')}">
-   <label class="field" style="margin-top:14px;">Nota</label>
+   <div style="font-weight:700;font-size:16px;margin:16px 0 6px;">Hoje, quanto você CONSEGUE fazer essa atividade?</div>
+   <p style="margin:0 0 12px;font-size:15px;line-height:1.5;color:var(--ink);"><strong>Quanto maior a nota, melhor.</strong> 🔴 0 = não consigo de jeito nenhum · 🟢 10 = consigo normalmente, como antes</p>
    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px;">
-    ${[0,1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="opt psfs-num" data-val="${n}" style="text-align:center;padding:14px 0;margin-bottom:0;font-weight:700;font-size:16px;${existing.score===n?'border-color:var(--navy);background:#EEF1F7;':''}">${n}</button>`).join('')}
+    ${[0,1,2,3,4,5,6,7,8,9,10].map(n=>{const bg=n<=3?'#F9D7D3':n<=6?'#FFF0BD':'#DEEDDA';const sel=existing.score===n;return `<button class="opt psfs-num" data-val="${n}" style="text-align:center;padding:12px 0 10px;margin-bottom:0;font-weight:700;font-size:17px;background:${bg};${sel?'border:3px solid var(--navy);':''}">${n}${n===0?'<div style="font-size:10.5px;font-weight:600;line-height:1.2;margin-top:2px;">não<br>consigo</div>':n===10?'<div style="font-size:10.5px;font-weight:600;line-height:1.2;margin-top:2px;">consigo<br>normal</div>':''}</button>`;}).join('')}
    </div>
-   <p class="sub" style="margin-bottom:0;">0 = não consigo fazer de jeito nenhum · 10 = consigo fazer como fazia antes</p>
+   ${Number.isInteger(existing.score)?`<div style="background:#EEF1F7;border-radius:10px;padding:12px 14px;font-size:15px;line-height:1.5;">Você marcou <strong>${existing.score}</strong>: quer dizer que ${existing.score===0?'você <strong>não consegue</strong> fazer essa atividade de jeito nenhum':existing.score<=3?'você consegue fazer essa atividade <strong>muito pouco</strong>':existing.score<=6?'você consegue fazer essa atividade <strong>pela metade</strong>, com bastante dificuldade':existing.score<=9?'você consegue fazer essa atividade <strong>quase normalmente</strong>, com pouca dificuldade':'você consegue fazer essa atividade <strong>normalmente</strong>, como antes do problema'}. Se não for isso, toque em outro número.</div>`:''}
    `}
    ${false ? `<button class="btn btn-ghost" id="psfsSkipBtn" style="width:100%;margin-top:14px;">${skipped?'Na verdade, quero citar uma atividade':'Não tenho mais nenhuma atividade para citar'}</button>` : ''}`;
  } else if(q.type==='nmq'){
@@ -1704,10 +1793,77 @@ justDone(){
      <button class="btn btn-primary" id="nextQBtn">Continuar agora</button>
      <button class="btn btn-ghost" id="seeListBtn" style="width:100%;margin-top:10px;">Ver lista completa</button>
    ` : `
-     <p class="sub">Você concluiu todos os questionários. Obrigado! Só um instante...</p>
+     <p class="sub">${customPending()?'Você concluiu os questionários. Agora, algumas perguntas do seu fisioterapeuta.':'Você concluiu todos os questionários. Obrigado! Só um instante...'}</p>
    `}
  </div></main>`;
 },
+
+ifbr(){
+ const p=state.patients.find(x=>x.id===state.ifbrPatientId); if(!p){ return '<main><p class="sub">Paciente não encontrado.</p></main>'; }
+ const f=state.ifbrDraft;
+ const opt=(v)=>['',25,50,75,100].map(n=>`<option value="${n}" ${v===n||(n===''&&v==null)?'selected':''}>${n===''?'—':n}</option>`).join('');
+ let rows='', curD=0;
+ IFBR_ACTS.forEach((a,i)=>{
+  if(a.d!==curD){ curD=a.d; rows+=`<div style="font-weight:700;font-size:15px;margin:18px 0 4px;color:var(--navy);">${a.d}. Domínio ${escapeHtml(IFBR_DOMAINS[a.d-1].name)}</div>`; }
+  rows+=`<div style="padding:10px 0;border-bottom:1px dashed var(--line);">
+   <div style="font-weight:600;font-size:14px;">${a.code} ${escapeHtml(a.name)}</div>
+   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;font-size:12.5px;">
+    <label>Sua pontuação <select data-ifbr="own" data-i="${i}" style="font-size:15px;padding:6px;">${opt(f.own[i])}</select></label>
+    <label>INSS · Serviço Social <select data-ifbr="ss" data-i="${i}" style="font-size:15px;padding:6px;">${opt(f.ss[i])}</select></label>
+    <label>INSS · Médico perito <select data-ifbr="mp" data-i="${i}" style="font-size:15px;padding:6px;">${opt(f.mp[i])}</select></label>
+   </div>
+   <div style="font-size:12px;color:var(--muted);margin-top:6px;">Barreiras (assinalar quando a pontuação for 25 por causa de barreira externa): ${IFBR_BARRIERS.map(([c,l])=>`<label style="margin-right:8px;white-space:nowrap;"><input type="checkbox" data-bar="${i}" value="${c}" ${(f.barriers[i]||[]).includes(c)?'checked':''}> ${l}</label>`).join('')}</div>
+  </div>`;
+ });
+ const chk=(group,key,label)=>`<label style="display:block;margin:4px 0;font-size:14px;"><input type="checkbox" data-${group}="${key}" ${f[group==='tipo'?'types':group==='emb'?'emb':'semAuxilio'][key]?'checked':''}> ${escapeHtml(label)}</label>`;
+ return `<div class="topbar"><div class="brand">IFBr-A — ${escapeHtml(p.name)}<small>Preenchido pelo profissional</small></div><button class="mode-toggle" id="ifbrBack">Voltar</button></div>
+ <main>
+  <div class="card">
+   <p class="sub" style="margin-bottom:10px;">Índice de Funcionalidade Brasileiro aplicado à aposentadoria da pessoa com deficiência (Portaria Interministerial AGU/MPS/MF/SEDH/MP nº 1/2014). A pontuação deve refletir o <strong>desempenho</strong> (o que a pessoa faz no seu ambiente habitual), não a capacidade. Se varia com o ambiente ou a hora do dia, pontue o nível de maior dependência.</p>
+   <details><summary style="cursor:pointer;font-weight:600;">Escala de pontuação oficial (Quadro 1)</summary>${IFBR_SCALE.map(([n,t])=>`<p style="font-size:13.5px;margin:8px 0;"><strong>${n}</strong>: ${escapeHtml(t)}</p>`).join('')}</details>
+  </div>
+  <div class="card">
+   <label class="field">Data da avaliação</label><input type="text" id="ifbrDate" value="${escapeHtml(f.date||'')}" placeholder="AAAA-MM-DD">
+   <label class="field">Quem prestou as informações</label><input type="text" id="ifbrInformant" value="${escapeHtml(f.informant||'')}" placeholder="A própria pessoa, familiar, ambos...">
+   <label class="field">Tipo de deficiência</label>${IFBR_TYPES.map(([k,l])=>chk('tipo',k,l)).join('')}
+   <label class="field" style="margin-top:12px;">Modelo linguístico Fuzzy — questões emblemáticas (Formulário 4)</label>${IFBR_GROUPS.map(g=>chk('emb',g.key,g.label+': '+g.emb)).join('')}
+   <label class="field" style="margin-top:12px;">Não dispõe do auxílio de terceiros sempre que necessário</label>${IFBR_GROUPS.map(g=>chk('aux',g.key,g.label)).join('')}
+   <p class="sub" style="font-size:12.5px;margin:8px 0 0;">O sistema aplica o Fuzzy quando há o tipo de deficiência marcado, a condição de pontuação do Formulário 4 e a questão emblemática positiva (item 4.c da Portaria). O item "não dispõe do auxílio de terceiros" é registrado no relatório, mas não altera a conta automaticamente, porque sua aplicação tem leituras divergentes.</p>
+  </div>
+  <div class="card"><div id="ifbrResult"></div></div>
+  <div class="card">${rows}
+   <label class="field" style="margin-top:16px;">Observações / história clínica e social</label>
+   <textarea id="ifbrNotes" rows="5" style="width:100%;font-family:'Inter';font-size:14.5px;padding:12px;border:1.5px solid var(--line);border-radius:10px;">${escapeHtml(f.notes||'')}</textarea>
+  </div>
+  <div class="errtext" id="ifbrErr" style="display:none;"></div>
+  <button class="btn btn-primary" id="ifbrSave">Salvar avaliação IFBr-A</button>
+ </main>`;
+},
+
+custom(){
+ const c=state.responsesLocal[CUSTOM_KEY]||{questions:[],answers:[]};
+ if(!state.customDraft) state.customDraft=(c.answers||[]).slice();
+ const qs=c.questions.map((q,i)=>`<div class="card">
+   <div class="qtext" style="font-size:17px;margin-bottom:12px;">${i+1}. ${escapeHtml(q)}</div>
+   <textarea class="cq" data-i="${i}" rows="4" placeholder="Escreva aqui a sua resposta..." style="width:100%;font-family:'Inter';font-size:16px;padding:12px 14px;border:1.5px solid var(--line);border-radius:10px;background:#fbfbfc;resize:vertical;">${escapeHtml(state.customDraft[i]||'')}</textarea>
+   ${SpeechRec?`<button class="btn btn-ghost" data-mic="${i}" style="width:100%;margin-top:8px;">🎤 Falar a resposta</button>`:''}
+ </div>`).join('');
+ return `<div class="topbar"><div class="brand">Perguntas do seu fisioterapeuta<small>${c.questions.length} pergunta${c.questions.length>1?'s':''}</small></div></div>
+ <main>
+   <div style="background:var(--r2-bg);border:1.5px solid var(--r2-txt);border-radius:12px;padding:16px 18px;margin-bottom:16px;">
+     <div style="font-weight:700;font-size:16px;margin-bottom:8px;">⚠️ Responda com sinceridade</div>
+     <p style="margin:0 0 8px;font-size:15px;line-height:1.5;">Marque exatamente como você está <strong>hoje</strong>. <strong>Não aumente e não diminua nada.</strong></p>
+     <p style="margin:0 0 8px;font-size:15px;line-height:1.5;">Suas respostas são comparadas com o exame, com os seus documentos médicos e com as suas outras respostas. Respostas exageradas ou que não correspondem à realidade <strong>enfraquecem o seu laudo</strong>, em vez de ajudar.</p>
+     <p style="margin:0;font-size:15px;line-height:1.5;">Se não entender alguma pergunta, pergunte ao seu fisioterapeuta antes de responder.</p>
+   </div>
+   <p class="sub">Responda cada pergunta com as suas palavras, com calma.${SpeechRec?' Se preferir falar em vez de escrever, toque em <strong>🎤 Falar a resposta</strong>, fale, e toque de novo para parar. O que você falou aparece escrito para você conferir e corrigir.':''}</p>
+   ${qs}
+   <div class="errtext" id="customErr" style="display:none;margin:4px 0 12px;"></div>
+   <button class="btn btn-primary" id="sendCustomBtn">Enviar respostas</button>
+   <button class="btn btn-ghost" id="customBackBtn" style="width:100%;margin-top:10px;">Voltar</button>
+ </main>`;
+},
+
 
 thanks(){
  return `<div class="topbar"><div class="brand">Gabriel dos Santos<small>Avaliação Funcional</small></div></div>
@@ -1746,7 +1902,7 @@ dashboard(){
  const filtered = state.patients.filter(p=>p.name.toLowerCase().includes(q));
  const rows = filtered.map(p=>{
   const open = state.openPatient===p.id;
-  const keys = Object.keys(p.responses||{});
+  const keys = Object.keys(p.responses||{}).filter(k=>k!==CUSTOM_KEY);
   const inner = keys.map(k=>{
    const r = p.responses[k];
    const qdef = QUESTIONNAIRES[k] || {title:k};
@@ -1767,7 +1923,7 @@ dashboard(){
      ${(canExpand && isOpen) ? renderItemDetail(k, r) : ''}
    </div>`;
   }).join('') || `<p class="sub" style="margin:12px 0;">Nenhum questionário respondido ainda.</p>`;
-  const actionsHtml = keys.length ? `<div style="display:flex;gap:8px;margin-bottom:14px;">
+  const actionsHtml = (keys.length||customOf(p)||p.ifbr) ? `<div style="display:flex;gap:8px;margin-bottom:14px;">
       <button class="btn btn-ghost" style="flex:1;" data-copyreport="${p.id}">📋 Copiar tudo</button>
       <button class="btn btn-ghost" style="flex:1;" data-downloadreport="${p.id}">⬇ Baixar .txt</button>
     </div>` : '';
@@ -1776,7 +1932,7 @@ dashboard(){
       <div><div class="patient-name">${p.name}</div><div class="patient-meta">${new Date(p.created_at).toLocaleString('pt-BR')} · ${keys.length}/${(p.assigned && p.assigned.length) ? p.assigned.length : QORDER.length} questionários</div></div>
       <button class="del-link" data-del="${p.id}">excluir</button>
     </div>
-    <div class="patient-body ${open?'open':''}">${actionsHtml}${inner}</div>
+    <div class="patient-body ${open?'open':''}">${actionsHtml}${inner}${customHtml(p)}${ifbrCardHtml(p)}</div>
   </div>`;
  }).join('');
  const now = new Date();
@@ -1835,7 +1991,7 @@ dashboard(){
        </label>`).join('')}
        <p class="sub" id="qSearchEmpty" style="display:none;margin:10px 0 0;">Nenhum questionário encontrado com esse termo.</p>
      </div>
-     <details style="margin-bottom:16px"><summary>Condições de uso dos demais instrumentos</summary>${QORDER.filter(k=>!canAdministerInstrument(k)&&!ASSIGNMENT_ALIASES[k]).map(k=>`<p><strong>${escapeHtml(LEGACY_INSTRUMENTS[k]?.title||k)}</strong>: ${escapeHtml(metaOf(k).note)} <a href="${escapeHtml(metaOf(k).source)}" target="_blank" rel="noopener noreferrer">Fonte</a></p>`).join('')}</details><button class="btn btn-primary" id="genLinkBtn">Gerar link</button>
+     <details style="margin-bottom:16px"><summary>Condições de uso dos demais instrumentos</summary>${QORDER.filter(k=>!canAdministerInstrument(k)&&!ASSIGNMENT_ALIASES[k]).map(k=>`<p><strong>${escapeHtml(LEGACY_INSTRUMENTS[k]?.title||k)}</strong>: ${escapeHtml(metaOf(k).note)} <a href="${escapeHtml(metaOf(k).source)}" target="_blank" rel="noopener noreferrer">Fonte</a></p>`).join('')}</details><label class="field" style="margin-top:4px;">Perguntas específicas deste paciente (opcional)</label><textarea id="customQs" rows="5" placeholder="Escreva uma pergunta por linha. Ex.:&#10;Me explica um dia normal no seu trabalho.&#10;Fez fisioterapia? Quanto tempo, e ajudou?" style="width:100%;font-family:'Inter';font-size:14.5px;padding:12px 14px;border:1.5px solid var(--line);border-radius:10px;margin-bottom:14px;resize:vertical;"></textarea><button class="btn btn-primary" id="genLinkBtn">Gerar link</button>
      <div id="linkResult" style="display:none;margin-top:14px;padding:14px;background:var(--bg);border-radius:10px;">
        <div id="linkText" style="font-family:'IBM Plex Mono',monospace;font-size:12px;word-break:break-all;"></div>
        <button class="btn btn-ghost" id="copyLinkBtn" style="width:100%;margin-top:10px;">Copiar link</button>
@@ -1963,7 +2119,7 @@ function bind(){
  }
 
  if(state.view==='list'){
-  document.querySelectorAll('.qcard').forEach(el=>{
+  document.querySelectorAll('.qcard[data-q]').forEach(el=>{
    el.onclick = ()=>{
     const k = el.dataset.q;
     if(!canAdministerInstrument(k)){ alert(BLOCKED_MESSAGE); return; }
@@ -1976,7 +2132,8 @@ function bind(){
     state.view='instructions'; render();
    };
   });
-  $('finishBtn').onclick = ()=>{ state.view='thanks'; render(); };
+  $('customCard') && ($('customCard').onclick = ()=>{ state.customDraft=null; state.view='custom'; render(); });
+  $('finishBtn').onclick = ()=>{ state.customDraft=null; state.view = customPending() ? 'custom' : 'thanks'; render(); };
  }
 
  if(state.view==='instructions'){
@@ -2047,7 +2204,73 @@ function bind(){
    $('nextBtn').disabled = true; $('nextBtn').textContent='Salvando...';
    try { await dbSaveResponses(state.patientId, {[state.qKey]:result}); }
    catch(error){ console.error(error); $('nextBtn').disabled=false; $('nextBtn').textContent='Concluir'; return; }
+   state.responsesLocal[state.qKey] = result;
    state.view='justDone'; render();
+  };
+ }
+
+ if(state.view==='ifbr'){
+  const f=state.ifbrDraft;
+  const showRes=()=>{ const s=ifbrSummary(f); const el=$('ifbrResult'); if(!el) return;
+   el.innerHTML = (s.own.complete
+     ? `<div class="sname">Sua pontuação: ${s.own.total} de 4.100${s.own.applied.length?' (Fuzzy aplicado: '+escapeHtml(s.own.applied.join(', '))+')':''}</div><div class="sdetail">Projeção na escala oficial (× 2): <strong>${s.projection}</strong> — ${escapeHtml(s.projectionClass)}. A classificação oficial soma dois avaliadores; isto é uma projeção.</div>`
+     : `<div class="sname">Sua pontuação: ${s.own.filled}/41 atividades pontuadas</div>`)
+    + (s.inss!=null?`<div class="sdetail" style="margin-top:6px;">INSS registrado: <strong>${s.inss}</strong> — ${escapeHtml(s.inssClass)} · <strong>${s.divergences.length}</strong> divergência(s) com a sua avaliação</div>`:(s.divergences.length?`<div class="sdetail" style="margin-top:6px;">${s.divergences.length} divergência(s) com as notas do INSS registradas</div>`:''));
+  };
+  showRes();
+  document.querySelectorAll('[data-ifbr]').forEach(el=>{ el.onchange=()=>{ const v=el.value===''?null:+el.value; f[el.dataset.ifbr][+el.dataset.i]=v; showRes(); }; });
+  document.querySelectorAll('[data-bar]').forEach(el=>{ el.onchange=()=>{ const i=+el.dataset.bar; const set=new Set(f.barriers[i]||[]); el.checked?set.add(el.value):set.delete(el.value); f.barriers[i]=[...set]; }; });
+  document.querySelectorAll('[data-tipo]').forEach(el=>{ el.onchange=()=>{ f.types[el.dataset.tipo]=el.checked; showRes(); }; });
+  document.querySelectorAll('[data-emb]').forEach(el=>{ el.onchange=()=>{ f.emb[el.dataset.emb]=el.checked; showRes(); }; });
+  document.querySelectorAll('[data-aux]').forEach(el=>{ el.onchange=()=>{ f.semAuxilio[el.dataset.aux]=el.checked; }; });
+  $('ifbrDate').oninput=e=>{ f.date=e.target.value; }; $('ifbrInformant').oninput=e=>{ f.informant=e.target.value; }; $('ifbrNotes').oninput=e=>{ f.notes=e.target.value; };
+  $('ifbrBack').onclick=()=>{ state.view='dashboard'; render(); };
+  $('ifbrSave').onclick=async ()=>{
+   $('ifbrSave').disabled=true; $('ifbrSave').textContent='Salvando...';
+   const payload={...f,updatedAt:new Date().toISOString(),source:'Portaria Interministerial AGU/MPS/MF/SEDH/MP nº 1/2014'};
+   const {error}=await supabase.from('submissions').update({ifbr:payload}).eq('id',state.ifbrPatientId);
+   if(error){ $('ifbrSave').disabled=false; $('ifbrSave').textContent='Salvar avaliação IFBr-A'; const e=$('ifbrErr'); e.style.display='block'; e.textContent='Não foi possível salvar: '+error.message+' — confira se o comando SQL do IFBr-A foi rodado no Supabase.'; return; }
+   const p=state.patients.find(x=>x.id===state.ifbrPatientId); if(p) p.ifbr=payload;
+   state.openPatient=state.ifbrPatientId; state.view='dashboard'; render();
+  };
+ }
+
+ if(state.view!=='custom') stopDictation();
+ if(state.view==='custom'){
+  const area=i=>document.querySelector('.cq[data-i="'+i+'"]');
+  document.querySelectorAll('.cq').forEach(el=>{ el.oninput=()=>{ state.customDraft[+el.dataset.i]=el.value; }; });
+  document.querySelectorAll('[data-mic]').forEach(btn=>{
+   btn.onclick=()=>{
+    const i=+btn.dataset.mic;
+    if(activeRec && activeRecIdx===i){ stopDictation(); btn.textContent='🎤 Falar a resposta'; return; }
+    stopDictation();
+    document.querySelectorAll('[data-mic]').forEach(b=>b.textContent='🎤 Falar a resposta');
+    const ta=area(i); const base=ta.value?ta.value.replace(/\s*$/,' '):'';
+    const rec=new SpeechRec(); rec.lang='pt-BR'; rec.continuous=true; rec.interimResults=true;
+    rec.onresult=ev=>{ let txt=''; for(let k=0;k<ev.results.length;k++){ txt+=ev.results[k][0].transcript; } ta.value=base+txt.trim(); state.customDraft[i]=ta.value; };
+    rec.onerror=ev=>{ const e=$('customErr'); if(!e) return; e.style.display='block'; e.textContent=(ev.error==='not-allowed'||ev.error==='service-not-allowed')?'O microfone não foi liberado. Permita o uso do microfone no navegador, ou escreva a resposta.':'Não foi possível ouvir. Tente de novo ou escreva a resposta.'; };
+    rec.onend=()=>{ if(activeRec===rec){ activeRec=null; activeRecIdx=null; btn.textContent='🎤 Falar a resposta'; } };
+    activeRec=rec; activeRecIdx=i; btn.textContent='⏹ Parar de gravar';
+    try{ rec.start(); }catch(e){ stopDictation(); btn.textContent='🎤 Falar a resposta'; }
+   };
+  });
+  $('customBackBtn').onclick=()=>{ stopDictation(); state.view='list'; render(); };
+  $('sendCustomBtn').onclick=async ()=>{
+   stopDictation();
+   document.querySelectorAll('[data-mic]').forEach(b=>b.textContent='🎤 Falar a resposta');
+   const c=state.responsesLocal[CUSTOM_KEY];
+   const vals=c.questions.map((q,i)=>(area(i).value||'').trim());
+   const missing=vals.map((v,i)=>v?null:i).filter(i=>i!==null);
+   document.querySelectorAll('.cq').forEach(el=>{ el.style.borderColor = vals[+el.dataset.i] ? 'var(--line)' : '#C00000'; });
+   if(missing.length){ const e=$('customErr'); e.style.display='block'; e.textContent='Falta responder: pergunta '+missing.map(i=>i+1).join(', ')+'.'; return; }
+   $('sendCustomBtn').disabled=true; $('sendCustomBtn').textContent='Enviando...';
+   const updated={...c,answers:vals,answeredAt:new Date().toISOString()};
+   const persisted={...state.responsesLocal,[CUSTOM_KEY]:updated};
+   const {data,error}=await supabase.rpc('save_submission_responses',{p_id:state.patientId,p_responses:persisted});
+   if(error||data===0){ $('sendCustomBtn').disabled=false; $('sendCustomBtn').textContent='Enviar respostas'; const e=$('customErr'); e.style.display='block'; e.textContent='Não foi possível enviar agora. Verifique a internet e tente de novo.'; return; }
+   state.responsesLocal=persisted; state.customDraft=null;
+   const rest=activeKeys(state.assignedKeys).filter(k=>!state.responsesLocal[k]);
+   state.view = rest.length ? 'list' : 'thanks'; render();
   };
  }
 
@@ -2068,7 +2291,7 @@ function bind(){
    $('seeListBtn').onclick = ()=>{ if(justDoneTimer){ clearTimeout(justDoneTimer); justDoneTimer=null; } state.view='list'; render(); };
    justDoneTimer = setTimeout(goNext, 2600);
   } else {
-   justDoneTimer = setTimeout(()=>{ state.view='thanks'; render(); }, 2200);
+   justDoneTimer = setTimeout(()=>{ state.customDraft=null; state.view = customPending() ? 'custom' : 'thanks'; render(); }, 2200);
   }
  }
 
@@ -2159,9 +2382,13 @@ function bind(){
    const name = $('newName').value.trim();
    if(!name){ $('newName').style.borderColor='#C00000'; return; }
    const checked = Array.from(document.querySelectorAll('.qcheck:checked')).map(el=>el.value).filter(canAdministerInstrument);
-   if(!checked.length){ alert('Selecione ao menos um questionário para este paciente.'); return; }
+   const customQs = ($('customQs').value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+   if(!checked.length && !customQs.length){ alert('Selecione ao menos um questionário ou escreva ao menos uma pergunta.'); return; }
    $('genLinkBtn').disabled = true; $('genLinkBtn').textContent = 'Gerando...';
-   const id = await dbCreateAssignment(name, $('newPhone').value.trim(), checked);
+   let id;
+   try{ id = await dbCreateAssignment(name, $('newPhone').value.trim(), checked, customQs); }
+   catch(e){ alert(e.message); $('genLinkBtn').disabled = false; $('genLinkBtn').textContent = 'Gerar link'; return; }
+   $('customQs').value='';
    const link = window.location.origin + window.location.pathname + '?p=' + id;
    $('linkResult').style.display = 'block';
    $('linkText').textContent = link;
@@ -2201,6 +2428,7 @@ function bind(){
     render();
    };
   });
+  document.querySelectorAll('[data-ifbr-open]').forEach(el=>{ el.onclick=(e)=>{ e.stopPropagation(); const p=state.patients.find(x=>x.id===el.dataset.ifbrOpen); state.ifbrPatientId=el.dataset.ifbrOpen; state.ifbrDraft=JSON.parse(JSON.stringify((p&&p.ifbr)||ifbrEmpty())); ['own','ss','mp'].forEach(k=>{ if(!Array.isArray(state.ifbrDraft[k])||state.ifbrDraft[k].length!==41) state.ifbrDraft[k]=Array(41).fill(null); }); if(!Array.isArray(state.ifbrDraft.barriers)) state.ifbrDraft.barriers=Array.from({length:41},()=>[]); ['types','emb','semAuxilio'].forEach(k=>{ state.ifbrDraft[k]=state.ifbrDraft[k]||{}; }); state.view='ifbr'; render(); window.scrollTo&&window.scrollTo(0,0); }; });
   document.querySelectorAll('[data-copyreport]').forEach(el=>{
    el.onclick = (e)=>{
     e.stopPropagation();
@@ -2243,7 +2471,7 @@ window.addEventListener?.('beforeunload',e=>{if(state.view==='wizard'&&state.qAn
   if(!row){ state.view='invalidLink'; render(); return; }
   state.patientId = pid;
   state.patientName = row.name;
-  state.assignedKeys = (row.assigned && row.assigned.length) ? row.assigned : null;
+  state.assignedKeys = Array.isArray(row.assigned) ? row.assigned : null;
   state.responsesLocal = row.responses || {};
   state.view = 'list';
   render();
