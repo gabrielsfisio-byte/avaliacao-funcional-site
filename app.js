@@ -162,6 +162,105 @@ function ifbrCardHtml(p){
  return `<div class="score-line" style="flex-direction:column;align-items:stretch;"><div class="sname">IFBr-A — sua avaliação de funcionalidade</div><div class="sdetail" style="margin-bottom:8px;">${res}</div><button class="btn btn-ghost" data-ifbr-open="${p.id}" style="font-size:13px;padding:10px;">📋 ${f?'Abrir / editar IFBr-A':'Preencher IFBr-A'}</button></div>`;
 }
 
+/* ===== PONTOS PARA ESCLARECER — checagem de coerência entre respostas (uso exclusivo do profissional) =====
+   Inconsistência NÃO é prova de exagero ou simulação: estes questionários não foram validados para isso.
+   Cada ponto é um convite a esclarecer com o paciente; nunca uma conclusão sobre credibilidade. */
+function consistencyFlags(p){
+ const R=(p&&p.responses)||{}, flags=[];
+ const get=k=>{ const r=R[k]; return (r&&Array.isArray(r.rawAnswers)&&effectiveStatus(k,r)==='VALID_OFFICIAL')?r.rawAnswers:null; };
+ const optText=(k,i,v)=>{ const q=QUESTIONNAIRES[k]; if(!q) return String(v); if(q.type==='yesno') return v===1?'Sim':'Não'; if(q.type==='sliders') return v+'/10'; const o=q.type==='sections'?q.data[i][1]:(q.optsPerItem?q.optsPerItem[i]:q.opts); return (o&&o[v]!==undefined)?String(o[v]).replace(/^\d+ — /,''):String(v); };
+ const itemText=(k,i)=>{ const q=QUESTIONNAIRES[k]; const it=q.type==='sections'?q.data[i][0]:q.items[i]; return String(it).replace(/^Nos últimos (30|7) (dias|DIAS)[^:]*:\s*/,''); };
+ const name=k=>{ const t=(QUESTIONNAIRES[k]||{}).title||k; return t.split(' — ')[0]; };
+ const say=(k,i)=>`${name(k)}, "${itemText(k,i)}": ${optText(k,i,get(k)[i])}`;
+ const add=(nivel,titulo,a,b,pergunta)=>flags.push({nivel,titulo,detalhe:[a,b].filter(Boolean),pergunta});
+ // fontes "sem dificuldade" (none) e "dificuldade máxima / incapaz" (max) por tema
+ const src=(k,i,noneVal,maxVal)=>{ const a=get(k); if(!a||!Number.isInteger(a[i])) return null; return {k,i,state:a[i]===noneVal?'none':a[i]===maxVal?'max':'mid'}; };
+ function cross(tema,list,pergunta){
+  const s=list.filter(Boolean), none=s.filter(x=>x.state==='none'), max=s.filter(x=>x.state==='max');
+  if(none.length&&max.length) add('Contradição',tema+': uma resposta indica nenhuma dificuldade e outra indica incapacidade',say(none[0].k,none[0].i),say(max[0].k,max[0].i),pergunta);
+ }
+ // 1) Escala Numérica de Dor (END)
+ const e=get('eva');
+ if(e){
+  if(e[0]>e[1]) add('Contradição','Dor em repouso maior que a dor no pior momento do dia',say('eva',0),say('eva',1),'"Você marcou mais dor agora, parado, do que no pior momento do seu dia. Me explica como a dor varia ao longo do dia?"');
+  if(e[2]>e[1]) add('Contradição','Dor no melhor momento maior que no pior momento',say('eva',2),say('eva',1),'"Pelo que entendi, o melhor momento do dia ficou com nota maior que o pior. Pode me contar quando a dor é mais forte e quando é mais fraca?"');
+  if(e[0]<e[2]) add('Contradição','Dor em repouso menor que no melhor momento do dia',say('eva',0),say('eva',2),'"Você marcou menos dor agora do que no melhor momento do dia. Hoje está melhor que o habitual?"');
+ }
+ // 2) Escadas
+ cross('Subir escadas',[src('lysholm',6,0,3),src('lefs',12,4,0),src('wiq',11,0,4)],'"Me explica como é subir escada no seu dia a dia: você sobe sozinho, segurando no corrimão, um degrau por vez?"');
+ // 3) Agachar
+ cross('Agachar',[src('lysholm',7,0,3),src('lefs',5,4,0)],'"Você consegue agachar, por exemplo para pegar algo no chão? Até onde?"');
+ // 4) Caminhar dentro de casa / distância curta
+ cross('Caminhar dentro de casa',[src('lefs',3,4,0),src('wiq',0,0,4)],'"Dentro de casa, como você anda? Precisa se apoiar em móveis ou em alguém?"');
+ cross('Caminhar dois quarteirões',[src('lefs',10,4,0),src('wiq',4,0,4)],'"Quanto você consegue andar na rua antes de precisar parar?"');
+ // 5) Caminhar longa distância
+ {const longNone=[src('lefs',11,4,0),src('whodas',6,0,4)].filter(x=>x&&x.state==='none');
+  const shortMax=[src('wiq',6,0,4),src('wiq',4,0,4)].filter(x=>x&&x.state==='max');
+  const r=get('rmdq');
+  if(longNone.length&&shortMax.length) add('Contradição','Caminhada: sem dificuldade para 1 km, mas incapaz em distância menor',say(longNone[0].k,longNone[0].i),say(shortMax[0].k,shortMax[0].i),'"Quanto você consegue andar de verdade, sem parar? Pode me dar um exemplo de um lugar onde vai a pé?"');
+  if(longNone.length&&r&&r[16]===1) add('Contradição','Caminhada: sem dificuldade para 1 km, mas só caminha distâncias curtas',say(longNone[0].k,longNone[0].i),say('rmdq',16),'"Quanto você consegue andar de verdade, sem parar?"');
+  if(longNone.length&&r&&r[23]===1) add('Contradição','Caminha 1 km sem dificuldade, mas fica na cama a maior parte do tempo',say(longNone[0].k,longNone[0].i),say('rmdq',23),'"Como é um dia normal seu, da hora que acorda até a hora de dormir?"');}
+ // 6) Ficar em pé
+ {const w=get('whodas'), r=get('rmdq');
+  const l=src('lefs',13,4,0);
+  if(l&&l.state==='none'&&w&&w[0]===4) add('Contradição','Ficar em pé: sem dificuldade por 1 hora, mas incapaz por 30 minutos',say('lefs',13),say('whodas',0),'"Por quanto tempo você consegue ficar em pé, por exemplo numa fila?"');
+  if(w&&w[0]===0&&r&&r[9]===1) add('Contradição','Ficar em pé: sem dificuldade, mas só fica em pé por períodos curtos',say('whodas',0),say('rmdq',9),'"Por quanto tempo você consegue ficar em pé, por exemplo numa fila?"');}
+ // 7) Vestir-se
+ {const w=get('whodas'), r=get('rmdq'), s=get('spadi');
+  if(w&&w[8]===0&&r&&r[18]===1) add('Contradição','Vestir-se: nenhuma dificuldade, mas se veste com ajuda de outras pessoas',say('whodas',8),say('rmdq',18),'"Como você se veste hoje? Alguém te ajuda em alguma parte, como calça, meia ou sapato?"');
+  if(w&&w[8]===0&&s){ const i=[7,8,9].find(i=>s[i]>=9); if(i!==undefined) add('Contradição','Vestir-se: nenhuma dificuldade, mas dificuldade máxima no ombro para se vestir',say('whodas',8),say('spadi',i),'"Como você se veste hoje? Usa o outro braço ou alguém te ajuda?"'); }
+  const l=get('lefs'); if(l&&l[4]===4&&r&&r[15]===1) add('Contradição','Colocar meias: nenhuma dificuldade num questionário e problema no outro',say('lefs',4),say('rmdq',15),'"Como você faz para colocar meia e sapato?"');}
+ // 8) Virar na cama
+ cross('Virar na cama',[src('lefs',19,4,0),(()=>{const r=get('rmdq'); return r&&Number.isInteger(r[13])?{k:'rmdq',i:13,state:r[13]===1?'max':'none'}:null;})()],'"À noite, como é para você se virar na cama?"');
+ // 9) Mapa de dor x questionário da região
+ {const n=get('nmq'), w=get('wpi');
+  const noPain=(ni,wi)=>{ const a=n&&n[ni]&&n[ni].y12===0; const b=w&&wi.length&&wi.every(i=>w[i]===0); return a?{t:'Questionário Nórdico: sem sintomas em "'+QUESTIONNAIRES.nmq.items[ni]+'" nos últimos 12 meses'}:b?{t:'Mapa de dor (WPI): sem dor nessa região nos últimos 7 dias'}:null; };
+  const r=get('rmdq'); if(r&&r[12]===1){ const np=noPain(5,[16]); if(np) add('Contradição','Dor lombar quase o tempo todo, mas o mapa de dor não marca a região',say('rmdq',12),np.t,'"Onde exatamente dói? Pode me mostrar no seu corpo?"'); }
+  const ly=get('lysholm'); if(ly&&ly[4]>=3){ const np=noPain(7,[]); if(np) add('Contradição','Dor marcada no joelho, mas o mapa de dor não marca o joelho',say('lysholm',4),np.t,'"Onde exatamente dói? A dor é no joelho ou em outro lugar da perna?"'); }
+  const s=get('spadi'); if(s){ const m=s.slice(0,5).filter(Number.isInteger); if(m.length&&m.reduce((a,b)=>a+b,0)/m.length>=7){ const np=noPain(1,[1,5]); if(np) add('Contradição','Dor forte no ombro, mas o mapa de dor não marca o ombro','SPADI: média de dor '+(m.reduce((a,b)=>a+b,0)/m.length).toFixed(1)+'/10',np.t,'"Onde exatamente dói? Pode me mostrar?"'); } }
+  const b=get('bctq'); if(b){ const v=b.slice(0,11).filter(Number.isInteger).map(x=>x+1); if(v.length&&v.reduce((a,c)=>a+c,0)/v.length>=4){ const np=noPain(4,[]); if(np) add('Contradição','Sintomas intensos na mão, mas o mapa de dor não marca punho/mão','BCTQ: gravidade dos sintomas '+(v.reduce((a,c)=>a+c,0)/v.length).toFixed(1)+'/5',np.t,'"Onde você sente o formigamento e a dor?"'); } }}
+ // 10) Trabalho
+ {const ic=get('ict'), w=get('whodas');
+  if(ic&&ic[1]>=8){ const lastOpt=QUESTIONNAIRES.ict.data[5][1].length-1;
+   if(ic[5]===lastOpt) add('Contradição','Nota alta para capacidade de trabalho, mas se considera totalmente incapaz',say('ict',1),say('ict',5),'"De 0 a 10, como está hoje sua capacidade para o seu trabalho? Me explica o que você ainda consegue fazer nele."');
+   if(w&&w[11]===4) add('Contradição','Nota alta para capacidade de trabalho, mas dificuldade extrema no trabalho',say('ict',1),say('whodas',11),'"Me explica como está o seu dia a dia no trabalho hoje."'); }
+  if(ic&&ic[1]<=2&&w&&w[11]===0) add('Contradição','Nota muito baixa para capacidade de trabalho, mas nenhuma dificuldade no trabalho',say('ict',1),say('whodas',11),'"Me explica como está o seu dia a dia no trabalho hoje."');}
+ // 11) PSFS (atividade escolhida pelo paciente) x questionários
+ {const ps=get('psfs');
+  if(ps) ps.forEach((a,ai)=>{ if(!a||a.skipped||!a.activity) return; const t=a.activity.toLowerCase(), sc=a.score;
+   const topics=[[/caminh|andar/,[src('wiq',6,0,4),src('lefs',11,4,0),src('whodas',6,0,4)]],[/escad|degrau/,[src('lysholm',6,0,3),src('lefs',12,4,0),src('wiq',11,0,4)]],[/agach|abaix/,[src('lysholm',7,0,3),src('lefs',5,4,0)]],[/vest|roupa/,[src('whodas',8,0,4)]],[/em p[eé]|ficar de p/,[src('whodas',0,0,4),src('lefs',13,4,0)]]];
+   topics.forEach(([re,list])=>{ if(!re.test(t)) return; const s=list.filter(Boolean);
+    const max=s.find(x=>x.state==='max'), none=s.find(x=>x.state==='none');
+    const psfsTxt='PSFS, atividade "'+a.activity+'": nota '+sc+'/10 (0 = não consegue, 10 = normal)';
+    if(sc>=8&&max) add('Contradição','Atividade escolhida pelo paciente: quase normal no PSFS, mas incapaz em outro questionário',psfsTxt,say(max.k,max.i),'"Você deu nota '+sc+' para '+a.activity+'. Lembrando que no PSFS nota alta quer dizer que consegue fazer. Era isso mesmo?"');
+    if(sc<=2&&none) add('Contradição','Atividade escolhida pelo paciente: quase incapaz no PSFS, mas sem dificuldade em outro questionário',psfsTxt,say(none.k,none.i),'"Você deu nota '+sc+' para '+a.activity+'. No PSFS nota baixa quer dizer que não consegue fazer. Era isso mesmo?"');
+   }); });}
+ // 12) Padrão de resposta: tudo igual e rapidez
+ Object.entries(R).forEach(([k,r])=>{
+  if(k.startsWith('__')||!r||effectiveStatus(k,r)!=='VALID_OFFICIAL') return;
+  const q=QUESTIONNAIRES[k], a=r.rawAnswers; if(!q||!Array.isArray(a)) return;
+  if(q.type==='likert'&&a.length>=8){ const ints=a.filter(Number.isInteger); if(ints.length===a.length&&ints.every(v=>v===ints[0])) add('Padrão','Todas as respostas iguais em '+name(k),'As '+a.length+' perguntas foram respondidas com a mesma opção: "'+optText(k,0,ints[0])+'"','','"Ficou alguma dúvida nas perguntas de '+name(k)+'? Vamos revisar algumas juntos?"'); }
+  const sec=r.timing&&r.timing.seconds, n=a.length;
+  if(sec&&n>=6&&sec/n<3) add('Padrão','Respondido muito rápido: '+name(k),n+' perguntas em '+sec+' segundos (menos de 3 segundos por pergunta)','','"Conseguiu ler todas as perguntas com calma? Vamos revisar algumas juntos?"');
+ });
+ // 13) Atenção clínica (não é contradição)
+ {const ph=get('phq9'); if(ph&&ph[8]>0) flags.unshift({nivel:'Atenção',titulo:'PHQ-9: pensamentos de se ferir ou de morte (item 9)',detalhe:[say('phq9',8)],pergunta:'Requer abordagem clínica direta e cuidadosa, e orientação de busca de cuidado em saúde mental (CVV 188).'});}
+ return flags;
+}
+function flagsHtml(p){
+ const f=consistencyFlags(p);
+ const head=`<div class="sname">Pontos para esclarecer${f.length?' ('+f.length+')':''}</div><div class="sdetail" style="margin-bottom:6px;">Visível só para você. Divergência não é prova de exagero: use para perguntar e esclarecer na teleconsulta.</div>`;
+ if(!f.length) return `<div class="score-line" style="flex-direction:column;align-items:stretch;">${head}<div style="font-size:13.5px;color:var(--r1-txt);">Nenhuma divergência encontrada entre as respostas.</div></div>`;
+ const col={'Atenção':['var(--r4-bg)','var(--r4-txt)'],'Contradição':['var(--r3-bg)','var(--r3-txt)'],'Padrão':['var(--r2-bg)','var(--r2-txt)']};
+ return `<div class="score-line" style="flex-direction:column;align-items:stretch;">${head}${f.map(x=>`<div style="border-left:4px solid ${col[x.nivel][1]};background:${col[x.nivel][0]};border-radius:8px;padding:10px 12px;margin:6px 0;"><div style="font-size:12px;font-weight:700;color:${col[x.nivel][1]};text-transform:uppercase;">${x.nivel}</div><div style="font-weight:600;font-size:14px;margin:2px 0 4px;">${escapeHtml(x.titulo)}</div>${x.detalhe.map(d=>`<div style="font-size:13px;">• ${escapeHtml(d)}</div>`).join('')}<div style="font-size:13px;margin-top:6px;"><strong>Pergunta sugerida:</strong> ${escapeHtml(x.pergunta)}</div></div>`).join('')}</div>`;
+}
+function flagsLines(p){
+ const f=consistencyFlags(p); if(!f.length) return [];
+ const L=['='.repeat(60),'PONTOS PARA ESCLARECER (uso interno do avaliador)','Divergências entre respostas. Não constituem conclusão sobre exagero, simulação ou credibilidade; servem para orientar o esclarecimento com o periciando.','='.repeat(60)];
+ f.forEach((x,i)=>{ L.push((i+1)+'. ['+x.nivel+'] '+x.titulo); x.detalhe.forEach(d=>L.push('   - '+d)); L.push('   Pergunta sugerida: '+x.pergunta,''); });
+ return L;
+}
+
 const CUSTOM_KEY='__custom';
 function customOf(p){ const c=p&&p.responses&&p.responses[CUSTOM_KEY]; return (c&&Array.isArray(c.questions)&&c.questions.length)?c:null; }
 function instrumentEntries(resp){ return Object.entries(resp||{}).filter(([k])=>k!==CUSTOM_KEY); }
@@ -186,6 +285,7 @@ function buildReportText(p){
  instrumentEntries(p.responses).forEach(([k,r])=>lines.push('='.repeat(60),(effectiveStatus(k,r)==='LEGACY_INVALID'?LEGACY_INSTRUMENTS[k]?.title:QUESTIONNAIRES[k]?.title)||k,'Status: '+statusLabel(effectiveStatus(k,r)),...responseLines(k,r),''));
  lines.push(...customLines(customOf(p)));
  lines.push(...ifbrLines(p));
+ lines.push(...flagsLines(p));
  return lines.join('\n');
 }
 
@@ -1487,6 +1587,26 @@ function runSelfTests(){
   const shuffle=v=>Array.isArray(v)?v.map(shuffle):(v&&typeof v==='object')?Object.fromEntries(Object.keys(v).reverse().map(k=>[k,shuffle(v[k])])):v;
   for(const k of Object.keys(CURRENT_VALIDATED_INSTRUMENTS)){ const r=validateAndScore(k,testFixture(k,1)); if(r.status!=='VALID_OFFICIAL') continue; const back=JSON.parse(JSON.stringify(shuffle(r))); check(k+' continua válido após gravar no banco',effectiveStatus(k,back)==='VALID_OFFICIAL'); }
   const r=validateAndScore('eva',[7,6,9,9]); const bad=JSON.parse(JSON.stringify(r)); bad.metrics[0].value=1; check('nota adulterada continua sendo detectada',effectiveStatus('eva',bad)==='INVALID_INPUT');}
+
+ {const saveState={...state}; state.assignedKeys=['rmdq','lysholm']; state.responsesLocal={rmdq:{x:1},[CUSTOM_KEY]:{questions:['A?'],answers:[],answeredAt:null}};
+  let p=progressInfo(); check('Progresso: total inclui perguntas',p.total===3&&p.done===1&&p.remaining===2);
+  check('Progresso: próximo é o questionário pendente',nextStep().key==='lysholm');
+  check('Progresso: frase de contexto',aboutPhrase('lysholm').startsWith('perguntas sobre'));
+  check('Progresso: incentivo para 2 restantes',encouragement(p).includes('Faltam só 2'));
+  state.responsesLocal.lysholm={x:1}; check('Progresso: depois vêm as perguntas',nextStep().type==='custom'&&encouragement(progressInfo()).includes('Falta só mais um'));
+  Object.assign(state,saveState);}
+
+ {const mk=(k,a,sec)=>{const r=validateAndScore(k,a); if(sec) r.timing={startedAt:'x',seconds:sec}; return JSON.parse(JSON.stringify(r));};
+  const lefs=Array(20).fill(2); lefs[12]=4; lefs[11]=4; const rm=Array(24).fill(0); rm[23]=1; rm[12]=1;
+  const nmq=testFixture('nmq',0); const nmqR=mk('nmq',nmq);
+  check('Coerência: fixture NMQ válida',nmqR.status==='VALID_OFFICIAL');
+  const p={responses:{eva:mk('eva',[8,5,6,9]),lefs:mk('lefs',lefs),lysholm:mk('lysholm',[0,0,0,0,3,0,3,0]),rmdq:mk('rmdq',rm,30),nmq:nmqR,psfs:mk('psfs',[{activity:'Subir escada',score:9,skipped:false},{activity:'Cozinhar',score:3,skipped:false},{activity:'Varrer',score:4,skipped:false}])}};
+  const T=consistencyFlags(p).map(x=>x.titulo).join(' | ');
+  const sem=nmq.every(r=>r&&r.y12===0);
+  ['Dor em repouso maior','Subir escadas','fica na cama','quase normal no PSFS','muito rápido'].forEach(s=>check('Coerência detecta: '+s,T.includes(s)));
+  if(sem){ check('Coerência detecta: lombar sem mapa',T.includes('Dor lombar quase o tempo todo')); check('Coerência detecta: joelho sem mapa',T.includes('Dor marcada no joelho')); }
+  check('Coerência: paciente coerente sem alerta',consistencyFlags({responses:{eva:mk('eva',[3,7,2,8])}}).length===0);
+  check('Coerência: respostas de versão antiga são ignoradas',consistencyFlags({responses:{eva:{rawAnswers:[9,1,9,1],status:'VALID_OFFICIAL'}}}).length===0);}
  let a=Array(36).fill(null);[3,13,17,23,24,20,21,1].forEach(n=>a[n-1]=0);
  check('RAND um item em cada domínio',validateAndScore('sf36',a).status==='VALID_OFFICIAL');a[2]=null;check('RAND domínio vazio',validateAndScore('sf36',a).status==='INCOMPLETE');
  a=testFixture('fabq',0);[0,7,12,13,15].forEach(i=>a[i]=6);check('FABQ exclusões',values('fabq',a).every(v=>v===0));
@@ -1529,7 +1649,6 @@ function runSelfTests(){
  if(failures.length)throw new Error('Autotestes: '+failures.join(' | '));
  return result;
 }
-if(new URLSearchParams(window.location.search).get('devtest')==='1')window.CLINIMETRIC_TEST_RESULT=runSelfTests();
 
 /* ---------- Supabase data layer ---------- */
 function newUuid(){
@@ -1552,7 +1671,7 @@ async function dbSaveResponses(id, responses){
   const checked=validateAndScore(k,r.rawAnswers);
   if(checked.status!=='VALID_OFFICIAL') throw new Error('INVALID_INPUT: '+answerErrors(k,r.rawAnswers).join('; '));
   if(state.responsesLocal[k] && effectiveStatus(k,state.responsesLocal[k])==='LEGACY_INVALID') throw new Error('Histórico não pode ser sobrescrito. Gere uma nova atribuição.');
-  responses[k]=checked;
+  responses[k]=(r.timing&&Number.isFinite(r.timing.seconds))?{...checked,timing:{startedAt:String(r.timing.startedAt||''),seconds:r.timing.seconds}}:checked;
  }
  const persisted={...state.responsesLocal,...responses};
  const {data, error} = await supabase.rpc('save_submission_responses', {p_id:id, p_responses:persisted});
@@ -1646,6 +1765,50 @@ const app = document.getElementById('app');
 function render(){ if(['instructions','wizard'].includes(state.view) && !canAdministerInstrument(state.qKey)){ alert(BLOCKED_MESSAGE); state.view='list'; } app.innerHTML = views[state.view](); bind(); }
 
 /* ---------- Views ---------- */
+/* ===== Progresso e incentivo para o paciente terminar ===== */
+const ABOUT_FALLBACK={sfi:'Sobre a sua coluna inteira (pescoço, meio e parte de baixo das costas).',fabq:'Sobre o que você pensa sobre a dor, o trabalho e a atividade física.',rmdq:'Sobre a parte de baixo das suas costas (lombar).',eva:'Sobre a intensidade da sua dor.',psfs:'Sobre atividades do dia a dia que você mesmo escolhe.',wpi:'Sobre em quais partes do corpo você sente dor.',lefs:'Sobre as suas pernas (quadril, joelho, tornozelo e caminhada).',sf36:'Sobre a sua saúde e qualidade de vida em geral.',ict:'Sobre a sua capacidade de trabalhar.',csi:'Sobre sintomas físicos e emocionais do dia a dia.',tsk13:'Sobre o medo de se movimentar.',dn4:'Sobre como é a sensação da sua dor.',wiq:'Sobre a sua capacidade de caminhar e subir escadas.',nmq:'Sobre dor em diferentes partes do corpo.',chalder:'Sobre o seu cansaço, no corpo e na cabeça.',comi:'Sobre a sua coluna, de forma resumida.',orebro:'Sobre a sua dor e o que você espera do futuro.'};
+function aboutOf(k){ const q=QUESTIONNAIRES[k]; const a=q&&q.about; return (a&&a!==q.title)?a:(ABOUT_FALLBACK[k]||a||(q?q.title:'')); }
+function aboutPhrase(k){ const a=aboutOf(k).replace(/\.$/,''); return /^Sobre /i.test(a) ? 'perguntas '+a.charAt(0).toLowerCase()+a.slice(1) : a; }
+function qItemCount(k){ const q=QUESTIONNAIRES[k]; return q?(q.type==='sections'?q.data.length:q.items.length):0; }
+function progressInfo(){
+ const keys=activeKeys(state.assignedKeys);
+ const c=state.responsesLocal&&state.responsesLocal[CUSTOM_KEY];
+ const hasCustom=!!(c&&Array.isArray(c.questions)&&c.questions.length);
+ const pendingKeys=keys.filter(k=>!state.responsesLocal[k]);
+ const total=keys.length+(hasCustom?1:0);
+ const remaining=pendingKeys.length+(hasCustom&&customPending()?1:0);
+ const secs=pendingKeys.reduce((s,k)=>s+qItemCount(k)*12,0)+(hasCustom&&customPending()?c.questions.length*45:0);
+ return {total,done:total-remaining,remaining,pendingKeys,hasCustom,minutes:Math.max(1,Math.round(secs/60))};
+}
+function encouragement(p){
+ if(p.remaining<=0) return 'Você terminou tudo. Muito obrigado! 🎉';
+ if(p.remaining===1) return 'Falta só mais um! Você está quase terminando. 💪';
+ if(p.remaining===2) return 'Faltam só 2. Já está quase acabando!';
+ if(p.done>0 && p.done>=p.total/2) return 'Você já passou da metade! Faltam '+p.remaining+'.';
+ if(p.done>0) return 'Ótimo começo! Continue assim.';
+ return 'Vamos começar? Vá no seu ritmo.';
+}
+function progressBarHtml(p){
+ const pct=p.total?Math.round(p.done/p.total*100):0;
+ return `<div style="display:flex;justify-content:space-between;font-size:13.5px;font-weight:600;margin-bottom:6px;"><span>${p.done} de ${p.total} concluído${p.total>1?'s':''}</span><span>${pct}%</span></div><div style="background:var(--line);border-radius:20px;height:12px;overflow:hidden;"><div style="width:${pct}%;height:100%;background:var(--r1-txt);border-radius:20px;"></div></div>`;
+}
+function nextStep(){ const p=progressInfo(); if(p.pendingKeys.length) return {type:'q',key:p.pendingKeys[0]}; if(p.hasCustom&&customPending()) return {type:'custom'}; return null; }
+function startStep(step){
+ if(!step){ state.view='thanks'; return; }
+ if(step.type==='custom'){ state.customDraft=null; state.view='custom'; return; }
+ state.qKey=step.key; state.qIndex=0; state.qAnswers=new Array(qItemCount(step.key)).fill(null); state.view='instructions';
+}
+function stepLabel(step){ return step ? (step.type==='custom' ? 'perguntas do seu fisioterapeuta' : aboutPhrase(step.key)) : ''; }
+if(typeof window!=='undefined' && window.addEventListener){
+ window.addEventListener('beforeunload',e=>{
+  const midQ = state.view==='wizard' && Array.isArray(state.qAnswers) && state.qAnswers.some(v=>v!==null&&v!==undefined);
+  const midC = state.view==='custom' && Array.isArray(state.customDraft) && state.customDraft.some(v=>v&&String(v).trim());
+  if(midQ||midC){ e.preventDefault(); e.returnValue=''; }
+ });
+}
+
+if(new URLSearchParams(window.location.search).get('devtest')==='1')window.CLINIMETRIC_TEST_RESULT=runSelfTests();
+
 const views = {
 
 landing(){
@@ -1674,27 +1837,35 @@ list(){
    const qd = QUESTIONNAIRES[k];
    return `<div class="qcard" data-q="${k}">
      <div>
-       <div class="qcard-title">${qd.about || qd.title}</div>
+       <div class="qcard-title">${escapeHtml(aboutOf(k))}</div>
        <div class="qcard-sub">${qd.title}</div>
      </div>
      <span class="badge ${done?'badge-done':'badge-pending'}">${done?statusLabel(effectiveStatus(k,state.responsesLocal[k])):'pendente'}</span>
    </div>`;
  }).join('');
  return `
- <div class="topbar"><div class="brand">Olá, ${state.patientName.split(' ')[0]}<small>Escolha um questionário</small></div></div>
+ <div class="topbar"><div class="brand">Olá, ${state.patientName.split(' ')[0]}<small>Sua avaliação</small></div></div>
  <main>
-   <p class="sub">Responda cada um destes. Quando terminar, pode fechar a página — seu fisioterapeuta já recebe os resultados.</p>
+   ${(()=>{const p=progressInfo(); const nx=nextStep(); return `<div class="card">
+     ${progressBarHtml(p)}
+     <p style="font-size:16px;font-weight:700;margin:14px 0 6px;">${encouragement(p)}</p>
+     ${p.remaining>0?`<p class="sub" style="margin:0 0 14px;">Faltam <strong>${p.remaining}</strong> de ${p.total}. Tempo estimado: cerca de <strong>${p.minutes} minuto${p.minutes>1?'s':''}</strong>. Cada questionário fica salvo assim que você termina ele, então, se precisar parar, termine o que estiver respondendo antes de sair.</p>
+     <button class="btn btn-primary" id="contBtn">▶ ${p.done?'Continuar':'Começar'}: ${escapeHtml(stepLabel(nx))}</button>`:`<p class="sub" style="margin:0;">Suas respostas já foram enviadas ao seu fisioterapeuta.</p>`}
+   </div>`;})()}
+   <p class="sub">Você também pode escolher a ordem tocando em qualquer item abaixo.</p>
    ${(state.assignedKeys||[]).some(k=>!canAdministerInstrument(k))?`<p class="sub">Há instrumentos bloqueados nesta atribuição. ${BLOCKED_MESSAGE} Entre em contato com o profissional responsável.</p>`:''}
    ${rows}
    ${(state.responsesLocal&&state.responsesLocal[CUSTOM_KEY]&&(state.responsesLocal[CUSTOM_KEY].questions||[]).length)?`<div class="qcard" id="customCard"><div><div class="qcard-title">Perguntas do seu fisioterapeuta</div><div class="qcard-sub">Responda escrevendo ou falando</div></div><span class="badge ${customPending()?'badge-pending':'badge-done'}">${customPending()?'pendente':'respondido'}</span></div>`:''}
-   <button class="btn btn-ghost" id="finishBtn" style="width:100%;margin-top:10px;">Concluir e enviar</button>
+   <button class="btn btn-ghost" id="finishBtn" style="width:100%;margin-top:10px;">${progressInfo().remaining>0?'Parar por agora':'Concluir'}</button>
  </main>`;
 },
 
 instructions(){
  const q = QUESTIONNAIRES[state.qKey];
- return `<div class="topbar"><div class="brand">${q.title}<small>Antes de começar</small></div></div>
+ const pi = progressInfo();
+ return `<div class="topbar"><div class="brand">${q.title}<small>Questionário ${pi.done+1} de ${pi.total}</small></div></div>
  <main>
+   <div class="card">${progressBarHtml(pi)}<p style="font-size:17px;font-weight:700;margin:14px 0 4px;">Agora, ${escapeHtml(aboutPhrase(state.qKey))}.</p><p class="sub" style="margin:0;">São ${qItemCount(state.qKey)} pergunta${qItemCount(state.qKey)>1?'s':''} neste questionário.${pi.remaining<=1?' É o último! 💪':''}</p></div>
    <div style="background:var(--r2-bg);border:1.5px solid var(--r2-txt);border-radius:12px;padding:16px 18px;margin-bottom:16px;">
      <div style="font-weight:700;font-size:16px;margin-bottom:8px;">⚠️ Responda com sinceridade</div>
      <p style="margin:0 0 8px;font-size:15px;line-height:1.5;">Marque exatamente como você está <strong>hoje</strong>. <strong>Não aumente e não diminua nada.</strong></p>
@@ -1781,7 +1952,7 @@ wizard(){
  const nextDisabled=!(itemComplete(q,state.qIndex,value)||(value==='NA'&&q.answerPolicy.allowNA));
 
  return `
- <div class="topbar"><div class="brand">${q.title}<small>${state.qIndex+1} de ${total}</small></div></div>
+ <div class="topbar"><div class="brand">${q.title}<small>Questionário ${progressInfo().done+1} de ${progressInfo().total} · pergunta ${state.qIndex+1} de ${total}</small></div></div>
  <main>
   ${state.qIndex===0 && q.intro ? `<div class="card" style="background:var(--bg);border-style:dashed;font-size:14px;color:var(--muted);line-height:1.5;">${q.intro}</div>` : ''}
   <div class="arcwrap">${arc}<div class="arc-label">${pct}% concluído</div></div>
@@ -1801,7 +1972,7 @@ justDone(){
  <main><div class="center-msg">
    <h1>Respondido com sucesso ✓</h1>
    ${next ? `
-     <p class="sub">Muito bem! Agora vamos para o próximo: <strong>${QUESTIONNAIRES[next].title}</strong>.</p>
+     ${(()=>{const p=progressInfo(); return `<div class="card" style="text-align:left;margin:14px 0;">${progressBarHtml(p)}<p style="font-size:17px;font-weight:700;margin:14px 0 6px;">${encouragement(p)}</p><p class="sub" style="margin:0;">A seguir: <strong>${escapeHtml(aboutPhrase(next))}</strong></p></div>`;})()}
      <button class="btn btn-primary" id="nextQBtn">Continuar agora</button>
      <button class="btn btn-ghost" id="seeListBtn" style="width:100%;margin-top:10px;">Ver lista completa</button>
    ` : `
@@ -1877,6 +2048,19 @@ custom(){
 },
 
 
+paused(){
+ const p=progressInfo();
+ return `<div class="topbar"><div class="brand">Gabriel dos Santos<small>Avaliação Funcional</small></div></div>
+ <main><div class="center-msg">
+   <h1>Tudo bem, suas respostas estão salvas ✓</h1>
+   <div class="card" style="text-align:left;margin:16px 0;">${progressBarHtml(p)}
+    <p style="font-size:16px;margin:14px 0 6px;">Faltam <strong>${p.remaining}</strong> de ${p.total} (cerca de ${p.minutes} minuto${p.minutes>1?'s':''}).</p>
+    <p class="sub" style="margin:0;">Seu fisioterapeuta precisa de todas as respostas para fazer o laudo. Quando puder, abra <strong>o mesmo link</strong> que você recebeu e continue de onde parou.</p>
+   </div>
+   <button class="btn btn-primary" id="resumeBtn">Na verdade, quero continuar agora</button>
+ </div></main>`;
+},
+
 thanks(){
  return `<div class="topbar"><div class="brand">Gabriel dos Santos<small>Avaliação Funcional</small></div></div>
  <main><div class="center-msg">
@@ -1944,7 +2128,7 @@ dashboard(){
       <div><div class="patient-name">${p.name}</div><div class="patient-meta">${new Date(p.created_at).toLocaleString('pt-BR')} · ${keys.length}/${(p.assigned && p.assigned.length) ? p.assigned.length : QORDER.length} questionários</div></div>
       <button class="del-link" data-del="${p.id}">excluir</button>
     </div>
-    <div class="patient-body ${open?'open':''}">${actionsHtml}${inner}${customHtml(p)}${ifbrCardHtml(p)}</div>
+    <div class="patient-body ${open?'open':''}">${actionsHtml}${inner}${flagsHtml(p)}${customHtml(p)}${ifbrCardHtml(p)}</div>
   </div>`;
  }).join('');
  const now = new Date();
@@ -2145,11 +2329,19 @@ function bind(){
    };
   });
   $('customCard') && ($('customCard').onclick = ()=>{ state.customDraft=null; state.view='custom'; render(); });
-  $('finishBtn').onclick = ()=>{ state.customDraft=null; state.view = customPending() ? 'custom' : 'thanks'; render(); };
+  $('contBtn') && ($('contBtn').onclick = ()=>{ startStep(nextStep()); render(); window.scrollTo&&window.scrollTo(0,0); });
+  $('finishBtn').onclick = ()=>{
+   const p=progressInfo();
+   if(p.remaining>0){
+    if(!confirm('Ainda falta'+(p.remaining>1?'m ':' ')+p.remaining+' de '+p.total+' (cerca de '+p.minutes+' minuto'+(p.minutes>1?'s':'')+').\n\nSeu fisioterapeuta precisa de todas as respostas para fazer o laudo.\n\nQuer mesmo parar agora? Você pode voltar depois pelo mesmo link.')) return;
+    state.view='paused'; render(); return;
+   }
+   state.view='thanks'; render();
+  };
  }
 
  if(state.view==='instructions'){
-  $('startQBtn').onclick = ()=>{ if(!canAdministerInstrument(state.qKey)){ alert(BLOCKED_MESSAGE); return; } state.view='wizard'; render(); };
+  $('startQBtn').onclick = ()=>{ if(!canAdministerInstrument(state.qKey)){ alert(BLOCKED_MESSAGE); return; } state.qStartedAt=Date.now(); state.view='wizard'; render(); };
  }
 
  if(state.view==='wizard'){
@@ -2211,6 +2403,7 @@ function bind(){
   $('nextBtn').onclick = async ()=>{
    if(state.qIndex < total-1){ state.qIndex++; render(); return; }
    const result = validateAndScore(state.qKey, state.qAnswers);
+   if(state.qStartedAt){ result.timing={startedAt:new Date(state.qStartedAt).toISOString(),seconds:Math.round((Date.now()-state.qStartedAt)/1000)}; }
    if(!canAdministerInstrument(state.qKey)){ alert(BLOCKED_MESSAGE); return; }
    if(result.status!=='VALID_OFFICIAL'){ alert(STATUS_MESSAGES[result.status]+' '+answerErrors(state.qKey,state.qAnswers).join('; ')); return; }
    $('nextBtn').disabled = true; $('nextBtn').textContent='Salvando...';
@@ -2286,6 +2479,8 @@ function bind(){
   };
  }
 
+ if(state.view==='paused'){ $('resumeBtn').onclick=()=>{ startStep(nextStep()); render(); }; }
+
  if(state.view==='justDone'){
   const keys = activeKeys(state.assignedKeys);
   const remaining = keys.filter(k=>!state.responsesLocal[k]);
@@ -2301,7 +2496,7 @@ function bind(){
    };
    $('nextQBtn').onclick = goNext;
    $('seeListBtn').onclick = ()=>{ if(justDoneTimer){ clearTimeout(justDoneTimer); justDoneTimer=null; } state.view='list'; render(); };
-   justDoneTimer = setTimeout(goNext, 2600);
+   justDoneTimer = setTimeout(goNext, 5000);
   } else {
    justDoneTimer = setTimeout(()=>{ state.customDraft=null; state.view = customPending() ? 'custom' : 'thanks'; render(); }, 2200);
   }
