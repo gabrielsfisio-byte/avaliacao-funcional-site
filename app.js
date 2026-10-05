@@ -54,6 +54,13 @@ function validateAndScore(k,a){
  if(result.n<meta.minAnswered||(q.complete&&!q.complete(a)))return {...result,status:'INCOMPLETE'};
  return {...q.score(cloneAnswers(a)),...result,status:'VALID_OFFICIAL'};
 }
+// Comparação independente da ordem dos campos: o Supabase (jsonb) reordena as chaves ao gravar.
+function canonicalJSON(v){
+ if(Array.isArray(v)) return '['+v.map(canonicalJSON).join(',')+']';
+ if(v&&typeof v==='object') return '{'+Object.keys(v).filter(k=>v[k]!==undefined).sort().map(k=>JSON.stringify(k)+':'+canonicalJSON(v[k])).join(',')+'}';
+ if(typeof v==='number'&&Number.isFinite(v)) return String(Math.round(v*1e9)/1e9);
+ return JSON.stringify(v===undefined?null:v);
+}
 function effectiveStatus(k,r){
  if(!r||r.instrumentVersion!==metaOf(k).version||r.scoringVersion!==SCORING_VERSION)return 'LEGACY_INVALID';
  if(!canAdministerInstrument(k))return metaOf(k).status;
@@ -61,7 +68,7 @@ function effectiveStatus(k,r){
  const checked=validateAndScore(k,r.rawAnswers);
  if(checked.status!==r.status)return checked.status==='VALID_OFFICIAL'?'INVALID_INPUT':checked.status;
  // A changed score cannot be presented as official; historical versions are never rescored.
- if(r.status==='VALID_OFFICIAL'&&(JSON.stringify(r.metrics)!==JSON.stringify(checked.metrics)||JSON.stringify(r.calculation)!==JSON.stringify(checked.calculation)))return 'INVALID_INPUT';
+ if(r.status==='VALID_OFFICIAL'&&(canonicalJSON(r.metrics)!==canonicalJSON(checked.metrics)||canonicalJSON(r.calculation)!==canonicalJSON(checked.calculation)))return 'INVALID_INPUT';
  return r.status;
 }
 function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -1475,6 +1482,11 @@ function runSelfTests(){
   g.emb={motora:false}; r=ifbrApply(g.own,g); check('IFBr: sem questão emblemática, sem Fuzzy',r.total===4100-50-25&&!r.applied.length);
   g.ss=g.own.slice(); g.mp=g.own.slice(); g.mp[0]=75; s=ifbrSummary(g); check('IFBr: divergência detectada',s.divergences.length===1&&s.inss===(4100-75)*2-25);
   const txt=buildReportText({name:'T',created_at:new Date().toISOString(),responses:{},ifbr:g}); check('IFBr: aparece no relatório',txt.includes('IFBr-A')&&txt.includes('Divergências'));}
+
+ {// Simula a ida e volta pelo Supabase (jsonb reordena as chaves dos objetos)
+  const shuffle=v=>Array.isArray(v)?v.map(shuffle):(v&&typeof v==='object')?Object.fromEntries(Object.keys(v).reverse().map(k=>[k,shuffle(v[k])])):v;
+  for(const k of Object.keys(CURRENT_VALIDATED_INSTRUMENTS)){ const r=validateAndScore(k,testFixture(k,1)); if(r.status!=='VALID_OFFICIAL') continue; const back=JSON.parse(JSON.stringify(shuffle(r))); check(k+' continua válido após gravar no banco',effectiveStatus(k,back)==='VALID_OFFICIAL'); }
+  const r=validateAndScore('eva',[7,6,9,9]); const bad=JSON.parse(JSON.stringify(r)); bad.metrics[0].value=1; check('nota adulterada continua sendo detectada',effectiveStatus('eva',bad)==='INVALID_INPUT');}
  let a=Array(36).fill(null);[3,13,17,23,24,20,21,1].forEach(n=>a[n-1]=0);
  check('RAND um item em cada domínio',validateAndScore('sf36',a).status==='VALID_OFFICIAL');a[2]=null;check('RAND domínio vazio',validateAndScore('sf36',a).status==='INCOMPLETE');
  a=testFixture('fabq',0);[0,7,12,13,15].forEach(i=>a[i]=6);check('FABQ exclusões',values('fabq',a).every(v=>v===0));
