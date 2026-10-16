@@ -1877,7 +1877,7 @@ instructions(){
      <p class="sub" style="margin-bottom:14px;">Não existe resposta certa ou errada. Responda com sinceridade, mesmo que a resposta pareça leve ou grave. Observe a janela de tempo de cada instrumento.</p>
      <p class="sub" style="margin-bottom:0;">Se tiver dúvida sobre o que uma pergunta quer dizer, pergunte antes de responder.</p>
      ${state.qKey==='psfs' ? `<div style="margin-top:16px;padding-top:16px;border-top:1px dashed var(--line);"><p class="sub" style="margin-bottom:0;">Pense em atividades do seu dia a dia que ficaram difíceis por causa do seu problema de saúde. Pode ser qualquer coisa: uma tarefa em casa, no trabalho, um hobby, um movimento específico. Escolha as que realmente afetam sua rotina.</p></div>`+`<div style="background:#EEF1F7;border:2px solid var(--navy);border-radius:12px;padding:16px 18px;margin-top:16px;">
-     <div style="font-weight:700;font-size:16px;margin-bottom:8px;">📌 Atenção: neste questionário a nota funciona ao contrário dos outros</div>
+     <div style="font-weight:700;font-size:16px;margin-bottom:8px;">📌 Como responder: em cada tela, escreva o NOME de UMA atividade (ex.: Varrer a casa) e dê uma nota. Não precisa explicar o motivo. São 3 telas.</div><div style="font-weight:700;font-size:16px;margin:10px 0 8px;">Atenção: neste questionário a nota funciona ao contrário dos outros</div>
      <p style="margin:0 0 6px;font-size:15px;line-height:1.5;"><strong>Quanto MAIOR a nota, MELHOR você consegue fazer a atividade.</strong></p>
      <p style="margin:0 0 4px;font-size:15px;">🔴 <strong>0</strong> = NÃO CONSIGO fazer de jeito nenhum</p>
      <p style="margin:0 0 4px;font-size:15px;">🟡 <strong>5</strong> = consigo fazer pela metade, com bastante dificuldade</p>
@@ -1928,14 +1928,36 @@ wizard(){
   const skipped = existing.skipped;
   body = `<div class="qtext">${current}</div>
    ${skipped ? `<p class="sub">Você optou por não citar essa atividade. Pode seguir para a próxima tela.</p>` : `
-   <label class="field">Nome da atividade</label>
-   <input type="text" id="psfsActivity" placeholder="Ex.: subir escadas, carregar sacola de compras..." value="${escapeHtml(existing.activity||'')}">
-   <div style="font-weight:700;font-size:16px;margin:16px 0 6px;">Hoje, quanto você CONSEGUE fazer essa atividade?</div>
-   <p style="margin:0 0 12px;font-size:15px;line-height:1.5;color:var(--ink);"><strong>Quanto maior a nota, melhor.</strong> 🔴 0 = não consigo de jeito nenhum · 🟢 10 = consigo normalmente, como antes</p>
+   <div style="background:#EEF1F7;border:2px solid var(--navy);border-radius:12px;padding:14px 16px;margin-bottom:16px;">
+    <div style="font-weight:700;font-size:16px;margin-bottom:6px;">📝 Escreva só o NOME de UMA atividade</div>
+    <p style="margin:0 0 6px;font-size:15px;line-height:1.5;">Uma atividade do seu dia a dia que ficou difícil por causa do seu problema. <strong>Não precisa explicar o motivo.</strong></p>
+    <p style="margin:0 0 6px;font-size:15px;line-height:1.5;">Exemplos: <strong>Varrer a casa</strong> · <strong>Lavar o banheiro</strong> · <strong>Subir escada</strong> · <strong>Carregar sacola</strong></p>
+    <p style="margin:0;font-size:14px;color:var(--muted);">Se você tem mais de uma, coloque uma em cada tela. São 3 telas.</p>
+   </div>
+   ${(()=>{const prev=state.qAnswers.slice(0,state.qIndex).filter(a=>a&&a.activity&&!a.skipped).map(a=>a.activity); return prev.length?`<p style="font-size:14px;margin:0 0 12px;">Você já colocou: ${prev.map(x=>'<strong>'+escapeHtml(x)+'</strong>').join(' · ')}. Agora escreva <strong>outra</strong>.</p>`:'';})()}
+   <div style="font-weight:700;font-size:17px;margin:0 0 6px;">1º · Escreva a atividade aqui:</div>
+   <input type="text" id="psfsActivity" maxlength="60" placeholder="Ex.: Varrer a casa" value="${escapeHtml(existing.activity||'')}" style="font-size:18px;border:2.5px solid var(--navy);margin-bottom:6px;">
+   <div id="psfsLongHint" style="display:${/porque|pois|por causa|tenho que|não consigo/i.test(existing.activity||'')||(existing.activity||'').length>40?'block':'none'};background:var(--r2-bg);border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:8px;">Basta o <strong>nome</strong> da atividade, sem explicar. Ex.: <strong>Lavar o banheiro</strong>. A dificuldade você mostra na nota abaixo.</div>
+   <div style="font-weight:700;font-size:17px;margin:16px 0 6px;">2º · Hoje, quanto você CONSEGUE fazer essa atividade?</div>
+   <div style="background:#FFE9A8;border:3px solid #C00000;border-radius:12px;padding:14px 16px;margin:4px 0 14px;text-align:center;">
+    <div style="font-weight:800;font-size:18px;color:#C00000;letter-spacing:.3px;">⚠️ ESTE É DIFERENTE DOS OUTROS!</div>
+    <div style="font-weight:800;font-size:17px;margin:6px 0;">QUANTO MAIOR A NOTA, MENOR A DIFICULDADE.</div>
+    <div style="font-size:15px;line-height:1.5;">🔴 <strong>0</strong> = NÃO CONSIGO fazer de jeito nenhum<br>🟢 <strong>10</strong> = CONSIGO fazer normalmente, como antes</div>
+   </div>
    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px;">
     ${[0,1,2,3,4,5,6,7,8,9,10].map(n=>{const bg=n<=3?'#F9D7D3':n<=6?'#FFF0BD':'#DEEDDA';const sel=existing.score===n;return `<button class="opt psfs-num" data-val="${n}" style="text-align:center;padding:12px 0 10px;margin-bottom:0;font-weight:700;font-size:17px;background:${bg};${sel?'border:3px solid var(--navy);':''}">${n}${n===0?'<div style="font-size:10.5px;font-weight:600;line-height:1.2;margin-top:2px;">não<br>consigo</div>':n===10?'<div style="font-size:10.5px;font-weight:600;line-height:1.2;margin-top:2px;">consigo<br>normal</div>':''}</button>`;}).join('')}
    </div>
-   ${Number.isInteger(existing.score)?`<div style="background:#EEF1F7;border-radius:10px;padding:12px 14px;font-size:15px;line-height:1.5;">Você marcou <strong>${existing.score}</strong>: quer dizer que ${existing.score===0?'você <strong>não consegue</strong> fazer essa atividade de jeito nenhum':existing.score<=3?'você consegue fazer essa atividade <strong>muito pouco</strong>':existing.score<=6?'você consegue fazer essa atividade <strong>pela metade</strong>, com bastante dificuldade':existing.score<=9?'você consegue fazer essa atividade <strong>quase normalmente</strong>, com pouca dificuldade':'você consegue fazer essa atividade <strong>normalmente</strong>, como antes do problema'}. Se não for isso, toque em outro número.</div>`:''}
+   ${(()=>{const sc=existing.score; if(!(Number.isInteger(sc)&&sc>=7&&((state.psfsConfirm||{})[state.qIndex]!==sc))) return ''; const at=(existing.activity||'').trim(); return `<div style="background:#FFE9A8;border:3px solid #C00000;border-radius:12px;padding:16px;margin:4px 0 12px;">
+     <div style="font-weight:800;font-size:17px;margin-bottom:8px;">🤔 Confirme, por favor</div>
+     <p style="margin:0 0 12px;font-size:16px;line-height:1.5;">Você marcou <strong>${sc}</strong>. Neste questionário isso quer dizer que você ${sc===10?'consegue fazer':'consegue fazer quase normalmente'} ${at?'<strong>'+escapeHtml(at)+'</strong>':'essa atividade'}, ${sc===10?'<strong>sem nenhuma dificuldade</strong>, como antes do problema':'com <strong>pouca dificuldade</strong>'}.</p>
+     <p style="margin:0 0 12px;font-size:16px;font-weight:700;">Você tem certeza?</p>
+     <button class="btn btn-primary" id="psfsYes" style="margin-bottom:10px;">Sim, tenho certeza: tenho pouca ou nenhuma dificuldade</button>
+     <button class="btn btn-ghost" id="psfsNo" style="width:100%;background:#fff;border:2px solid #C00000;color:#C00000;font-weight:700;">Não, me confundi: tenho MUITA dificuldade</button>
+    </div>`;})()}
+   ${state.psfsLowHint===state.qIndex&&!Number.isInteger(existing.score)?`<div style="background:#F9D7D3;border:2px solid #C00000;border-radius:10px;padding:12px 14px;font-size:16px;font-weight:700;margin-bottom:10px;">👇 Sem problema! Então toque em um número BAIXO (os vermelhos, perto do 0).</div>`:''}
+   ${Number.isInteger(existing.score)&&!(existing.score>=7&&((state.psfsConfirm||{})[state.qIndex]!==existing.score))?`<div style="background:#EEF1F7;border-radius:10px;padding:12px 14px;font-size:15px;line-height:1.5;">Você marcou <strong>${existing.score}</strong>: quer dizer que ${existing.score===0?'você <strong>não consegue</strong> fazer essa atividade de jeito nenhum':existing.score<=3?'você consegue fazer essa atividade <strong>muito pouco</strong>':existing.score<=6?'você consegue fazer essa atividade <strong>pela metade</strong>, com bastante dificuldade':existing.score<=9?'você consegue fazer essa atividade <strong>quase normalmente</strong>, com pouca dificuldade':'você consegue fazer essa atividade <strong>normalmente</strong>, como antes do problema'}. Se não for isso, toque em outro número.</div>`:''}
+   ${Number.isInteger(existing.score)&&!(existing.activity||'').trim()?`<div style="background:var(--r4-bg);border:2px solid var(--r4-txt);border-radius:10px;padding:12px 14px;font-size:15.5px;font-weight:600;margin-top:10px;">☝️ Falta escrever o nome da atividade no campo lá de cima (passo 1º).</div>`:''}
+   <div id="psfsErr" style="display:none;background:var(--r4-bg);border:2px solid var(--r4-txt);border-radius:10px;padding:12px 14px;font-size:15.5px;font-weight:600;margin-top:10px;"></div>
    `}
    ${false ? `<button class="btn btn-ghost" id="psfsSkipBtn" style="width:100%;margin-top:14px;">${skipped?'Na verdade, quero citar uma atividade':'Não tenho mais nenhuma atividade para citar'}</button>` : ''}`;
  } else if(q.type==='nmq'){
@@ -1949,7 +1971,7 @@ wizard(){
   body = `<div class="qtext">${current}</div>` + inner;
  }
  const value=state.qAnswers[state.qIndex];
- const nextDisabled=!(itemComplete(q,state.qIndex,value)||(value==='NA'&&q.answerPolicy.allowNA));
+ const nextDisabled= q.type==='psfs' ? false : !(itemComplete(q,state.qIndex,value)||(value==='NA'&&q.answerPolicy.allowNA));
 
  return `
  <div class="topbar"><div class="brand">${q.title}<small>Questionário ${progressInfo().done+1} de ${progressInfo().total} · pergunta ${state.qIndex+1} de ${total}</small></div></div>
@@ -2341,7 +2363,7 @@ function bind(){
  }
 
  if(state.view==='instructions'){
-  $('startQBtn').onclick = ()=>{ if(!canAdministerInstrument(state.qKey)){ alert(BLOCKED_MESSAGE); return; } state.qStartedAt=Date.now(); state.view='wizard'; render(); };
+  $('startQBtn').onclick = ()=>{ if(!canAdministerInstrument(state.qKey)){ alert(BLOCKED_MESSAGE); return; } state.qStartedAt=Date.now(); if(state.qKey==='psfs'){ state.psfsConfirm={}; state.psfsLowHint=null; } state.view='wizard'; render(); };
  }
 
  if(state.view==='wizard'){
@@ -2372,13 +2394,15 @@ function bind(){
    if(activityInput){
     activityInput.oninput = ()=>{
      state.qAnswers[state.qIndex].activity = activityInput.value;
-     const ok = activityInput.value.trim().length>0 && state.qAnswers[state.qIndex].score!==null && state.qAnswers[state.qIndex].score!==undefined;
-     $('nextBtn').disabled = !ok;
+     const v=activityInput.value; const h=$('psfsLongHint'); if(h) h.style.display=(/porque|pois|por causa|tenho que|não consigo/i.test(v)||v.length>40)?'block':'none';
+     const e=$('psfsErr'); if(e&&v.trim()) e.style.display='none';
     };
    }
    document.querySelectorAll('.psfs-num').forEach(el=>{
-    el.onclick = ()=>{ state.qAnswers[state.qIndex].score = parseInt(el.dataset.val); render(); };
+    el.onclick = ()=>{ state.qAnswers[state.qIndex].score = parseInt(el.dataset.val); state.psfsLowHint=null; render(); };
    });
+   $('psfsYes') && ($('psfsYes').onclick = ()=>{ state.psfsConfirm=state.psfsConfirm||{}; state.psfsConfirm[state.qIndex]=state.qAnswers[state.qIndex].score; render(); });
+   $('psfsNo') && ($('psfsNo').onclick = ()=>{ state.qAnswers[state.qIndex].score=null; state.psfsLowHint=state.qIndex; render(); });
    $('psfsSkipBtn') && ($('psfsSkipBtn').onclick = ()=>{
     state.qAnswers[state.qIndex].skipped = !state.qAnswers[state.qIndex].skipped;
     render();
@@ -2401,6 +2425,15 @@ function bind(){
   }
   $('backBtn').onclick = ()=>{ if(state.qIndex===0){ state.view='list'; render(); } else { state.qIndex--; render(); } };
   $('nextBtn').onclick = async ()=>{
+   if(q.type==='psfs'){
+    const cur=state.qAnswers[state.qIndex]||{}; const act=(cur.activity||'').trim(); const err=$('psfsErr');
+    const show=msg=>{ if(err){ err.style.display='block'; err.textContent=msg; } const inp=$('psfsActivity'); if(inp&&!act&&inp.focus) inp.focus(); };
+    if(!act){ show('☝️ Falta escrever o nome da atividade no passo 1º (lá em cima). Ex.: Varrer a casa.'); return; }
+    if(!Number.isInteger(cur.score)){ show('👇 Falta tocar em um número de 0 a 10 no passo 2º.'); return; }
+    if(cur.score>=7&&((state.psfsConfirm||{})[state.qIndex]!==cur.score)){ show('☝️ Confirme a sua nota no quadro amarelo acima antes de continuar.'); return; }
+    const dup=state.qAnswers.slice(0,state.qIndex).some(a=>a&&a.activity&&a.activity.trim().toLowerCase()===act.toLowerCase());
+    if(dup){ show('Você já colocou essa atividade. Escreva uma atividade diferente.'); return; }
+   }
    if(state.qIndex < total-1){ state.qIndex++; render(); return; }
    const result = validateAndScore(state.qKey, state.qAnswers);
    if(state.qStartedAt){ result.timing={startedAt:new Date(state.qStartedAt).toISOString(),seconds:Math.round((Date.now()-state.qStartedAt)/1000)}; }
