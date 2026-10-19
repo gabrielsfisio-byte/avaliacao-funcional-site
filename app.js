@@ -266,14 +266,14 @@ function customOf(p){ const c=p&&p.responses&&p.responses[CUSTOM_KEY]; return (c
 function instrumentEntries(resp){ return Object.entries(resp||{}).filter(([k])=>k!==CUSTOM_KEY); }
 function customLines(c){
  if(!c) return [];
- const out=['='.repeat(60),'PERGUNTAS ESPECÍFICAS DO CASO',c.answeredAt?'Respondidas em: '+new Date(c.answeredAt).toLocaleString('pt-BR'):'Ainda não respondidas pelo paciente.','='.repeat(60)];
+ const out=['='.repeat(60),'PERGUNTAS ESPECÍFICAS DO CASO',c.answeredAt?'Respondidas em: '+new Date(c.answeredAt).toLocaleString('pt-BR'):((c.answers||[]).filter(Boolean).length?'Parcial: '+(c.answers||[]).filter(Boolean).length+' de '+c.questions.length+' respondidas.':'Ainda não respondidas pelo paciente.'),'='.repeat(60)];
  c.questions.forEach((q,i)=>{ out.push((i+1)+'. '+q,'Resposta: '+((c.answers&&c.answers[i])||'(sem resposta)'),''); });
  return out;
 }
 function customHtml(p){
  const c=customOf(p); if(!c) return '';
  const body=c.questions.map((q,i)=>`<div style="padding:9px 0;border-bottom:1px dashed var(--line);"><div style="font-weight:600;font-size:13.5px;">${i+1}. ${escapeHtml(q)}</div><div style="font-size:13.5px;margin-top:3px;white-space:pre-wrap;">${c.answers&&c.answers[i]?escapeHtml(c.answers[i]):'<span style="color:var(--muted)">sem resposta</span>'}</div></div>`).join('');
- return `<div class="score-line" style="flex-direction:column;align-items:stretch;"><div class="sname">Perguntas específicas do caso</div><div class="sdetail">${c.answeredAt?'Respondidas em '+new Date(c.answeredAt).toLocaleString('pt-BR'):'Aguardando resposta do paciente'}</div>${body}</div>`;
+ return `<div class="score-line" style="flex-direction:column;align-items:stretch;"><div class="sname">Perguntas específicas do caso</div><div class="sdetail">${c.answeredAt?'Respondidas em '+new Date(c.answeredAt).toLocaleString('pt-BR'):((c.answers||[]).filter(Boolean).length?(c.answers||[]).filter(Boolean).length+' de '+c.questions.length+' respondidas até agora':'Aguardando resposta do paciente')}</div>${body}</div>`;
 }
 function customPending(){ const c=state.responsesLocal&&state.responsesLocal[CUSTOM_KEY]; return !!(c&&Array.isArray(c.questions)&&c.questions.length&&!c.answeredAt); }
 const SpeechRec = (typeof window!=='undefined') && (window.SpeechRecognition||window.webkitSpeechRecognition);
@@ -1795,14 +1795,14 @@ function progressBarHtml(p){
 function nextStep(){ const p=progressInfo(); if(p.pendingKeys.length) return {type:'q',key:p.pendingKeys[0]}; if(p.hasCustom&&customPending()) return {type:'custom'}; return null; }
 function startStep(step){
  if(!step){ state.view='thanks'; return; }
- if(step.type==='custom'){ state.customDraft=null; state.view='custom'; return; }
+ if(step.type==='custom'){ state.customDraft=null; state.customIdx=null; state.view='custom'; return; }
  state.qKey=step.key; state.qIndex=0; state.qAnswers=new Array(qItemCount(step.key)).fill(null); state.view='instructions';
 }
 function stepLabel(step){ return step ? (step.type==='custom' ? 'perguntas do seu fisioterapeuta' : aboutPhrase(step.key)) : ''; }
 if(typeof window!=='undefined' && window.addEventListener){
  window.addEventListener('beforeunload',e=>{
   const midQ = state.view==='wizard' && Array.isArray(state.qAnswers) && state.qAnswers.some(v=>v!==null&&v!==undefined);
-  const midC = state.view==='custom' && Array.isArray(state.customDraft) && state.customDraft.some(v=>v&&String(v).trim());
+  const midC = state.view==='custom' && Array.isArray(state.customDraft) && Number.isInteger(state.customIdx) && (()=>{const c=state.responsesLocal[CUSTOM_KEY]; const d=(state.customDraft[state.customIdx]||'').trim(); return !!d && d!==((c&&c.answers&&c.answers[state.customIdx])||'');})();
   if(midQ||midC){ e.preventDefault(); e.returnValue=''; }
  });
 }
@@ -2047,25 +2047,30 @@ ifbr(){
 
 custom(){
  const c=state.responsesLocal[CUSTOM_KEY]||{questions:[],answers:[]};
- if(!state.customDraft) state.customDraft=(c.answers||[]).slice();
- const qs=c.questions.map((q,i)=>`<div class="card">
-   <div class="qtext" style="font-size:17px;margin-bottom:12px;">${i+1}. ${escapeHtml(q)}</div>
-   <textarea class="cq" data-i="${i}" rows="4" placeholder="Escreva aqui a sua resposta..." style="width:100%;font-family:'Inter';font-size:16px;padding:12px 14px;border:1.5px solid var(--line);border-radius:10px;background:#fbfbfc;resize:vertical;">${escapeHtml(state.customDraft[i]||'')}</textarea>
-   ${SpeechRec?`<button class="btn btn-ghost" data-mic="${i}" style="width:100%;margin-top:8px;">🎤 Falar a resposta</button>`:''}
- </div>`).join('');
- return `<div class="topbar"><div class="brand">Perguntas do seu fisioterapeuta<small>${c.questions.length} pergunta${c.questions.length>1?'s':''}</small></div></div>
+ const N=c.questions.length, saved=c.answers||[];
+ if(!Array.isArray(state.customDraft)) state.customDraft=c.questions.map((q,i)=>saved[i]||'');
+ if(!Number.isInteger(state.customIdx)){ const f=c.questions.findIndex((q,i)=>!saved[i]); state.customIdx=f<0?0:f; }
+ const i=state.customIdx, done=c.questions.filter((q,k)=>saved[k]).length, pct=Math.round(done/N*100);
+ const isSaved=!!saved[i] && saved[i]===(state.customDraft[i]||'').trim();
+ return `<div class="topbar"><div class="brand">Perguntas do seu fisioterapeuta<small>Pergunta ${i+1} de ${N}</small></div></div>
  <main>
-   <div style="background:var(--r2-bg);border:1.5px solid var(--r2-txt);border-radius:12px;padding:16px 18px;margin-bottom:16px;">
-     <div style="font-weight:700;font-size:16px;margin-bottom:8px;">⚠️ Responda com sinceridade</div>
-     <p style="margin:0 0 8px;font-size:15px;line-height:1.5;">Marque exatamente como você está <strong>hoje</strong>. <strong>Não aumente e não diminua nada.</strong></p>
-     <p style="margin:0 0 8px;font-size:15px;line-height:1.5;">Suas respostas são comparadas com o exame, com os seus documentos médicos e com as suas outras respostas. Respostas exageradas ou que não correspondem à realidade <strong>enfraquecem o seu laudo</strong>, em vez de ajudar.</p>
-     <p style="margin:0;font-size:15px;line-height:1.5;">Se não entender alguma pergunta, pergunte ao seu fisioterapeuta antes de responder.</p>
+   <div style="display:flex;justify-content:space-between;font-size:13.5px;font-weight:600;margin-bottom:6px;"><span>${done} de ${N} respondida${N>1?'s':''}</span><span>${pct}%</span></div>
+   <div style="background:var(--line);border-radius:20px;height:12px;overflow:hidden;margin-bottom:16px;"><div style="width:${pct}%;height:100%;background:var(--r1-txt);border-radius:20px;"></div></div>
+   ${i===0?`<div style="background:var(--r2-bg);border:1.5px solid var(--r2-txt);border-radius:12px;padding:14px 16px;margin-bottom:16px;font-size:15px;line-height:1.5;"><strong>⚠️ Responda com sinceridade</strong>, exatamente como você está hoje. Não aumente e não diminua nada. Cada resposta é <strong>enviada na hora</strong> em que você toca em "Enviar resposta", então você pode parar e continuar depois pelo mesmo link.</div>`:''}
+   <div class="card">
+    <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Pergunta ${i+1} de ${N}</div>
+    <div class="qtext" style="font-size:20px;margin-bottom:18px;">${escapeHtml(c.questions[i])}</div>
+    ${SpeechRec?`<button class="btn" id="micBtn" style="width:100%;font-size:17px;padding:18px;background:${activeRec&&activeRecIdx===i?'#C00000':'#1D6F42'};color:#fff;margin-bottom:6px;">${activeRec&&activeRecIdx===i?'⏹ Toque aqui para PARAR de gravar':'🎤 Toque aqui para RESPONDER FALANDO'}</button>
+    <p class="sub" style="font-size:13.5px;margin:0 0 14px;">Fale normalmente. O que você falar aparece escrito no quadro abaixo para você conferir.</p>`:''}
+    <label class="field" style="margin-bottom:6px;">${SpeechRec?'Ou escreva aqui:':'Escreva aqui a sua resposta:'}</label>
+    <textarea id="cqOne" rows="6" placeholder="Sua resposta..." style="width:100%;font-family:'Inter';font-size:17px;padding:12px 14px;border:2px solid var(--line);border-radius:10px;background:#fbfbfc;resize:vertical;">${escapeHtml(state.customDraft[i]||'')}</textarea>
+    ${isSaved?`<div style="color:var(--r1-txt);font-weight:600;font-size:14px;margin-top:6px;">✓ Resposta já enviada. Se quiser, pode alterar e enviar de novo.</div>`:''}
    </div>
-   <p class="sub">Responda cada pergunta com as suas palavras, com calma.${SpeechRec?' Se preferir falar em vez de escrever, toque em <strong>🎤 Falar a resposta</strong>, fale, e toque de novo para parar. O que você falou aparece escrito para você conferir e corrigir.':''}</p>
-   ${qs}
-   <div class="errtext" id="customErr" style="display:none;margin:4px 0 12px;"></div>
-   <button class="btn btn-primary" id="sendCustomBtn">Enviar respostas</button>
-   <button class="btn btn-ghost" id="customBackBtn" style="width:100%;margin-top:10px;">Voltar</button>
+   <div class="errtext" id="customErr" style="display:none;margin:4px 0 12px;font-size:15px;"></div>
+   <button class="btn btn-primary" id="sendOneBtn" style="font-size:17px;padding:18px;">${i===N-1?'✓ Enviar resposta e terminar':'✓ Enviar resposta e ir para a próxima'}</button>
+   <div style="display:flex;gap:10px;margin-top:10px;">
+    <button class="btn btn-ghost" id="customPrevBtn" style="flex:1;">${i===0?'Voltar à lista':'← Pergunta anterior'}</button>
+   </div>
  </main>`;
 },
 
@@ -2350,7 +2355,7 @@ function bind(){
     state.view='instructions'; render();
    };
   });
-  $('customCard') && ($('customCard').onclick = ()=>{ state.customDraft=null; state.view='custom'; render(); });
+  $('customCard') && ($('customCard').onclick = ()=>{ state.customDraft=null; state.customIdx=null; state.view='custom'; render(); });
   $('contBtn') && ($('contBtn').onclick = ()=>{ startStep(nextStep()); render(); window.scrollTo&&window.scrollTo(0,0); });
   $('finishBtn').onclick = ()=>{
    const p=progressInfo();
@@ -2475,40 +2480,41 @@ function bind(){
 
  if(state.view!=='custom') stopDictation();
  if(state.view==='custom'){
-  const area=i=>document.querySelector('.cq[data-i="'+i+'"]');
-  document.querySelectorAll('.cq').forEach(el=>{ el.oninput=()=>{ state.customDraft[+el.dataset.i]=el.value; }; });
-  document.querySelectorAll('[data-mic]').forEach(btn=>{
-   btn.onclick=()=>{
-    const i=+btn.dataset.mic;
-    if(activeRec && activeRecIdx===i){ stopDictation(); btn.textContent='🎤 Falar a resposta'; return; }
-    stopDictation();
-    document.querySelectorAll('[data-mic]').forEach(b=>b.textContent='🎤 Falar a resposta');
-    const ta=area(i); const base=ta.value?ta.value.replace(/\s*$/,' '):'';
-    const rec=new SpeechRec(); rec.lang='pt-BR'; rec.continuous=true; rec.interimResults=true;
-    rec.onresult=ev=>{ let txt=''; for(let k=0;k<ev.results.length;k++){ txt+=ev.results[k][0].transcript; } ta.value=base+txt.trim(); state.customDraft[i]=ta.value; };
-    rec.onerror=ev=>{ const e=$('customErr'); if(!e) return; e.style.display='block'; e.textContent=(ev.error==='not-allowed'||ev.error==='service-not-allowed')?'O microfone não foi liberado. Permita o uso do microfone no navegador, ou escreva a resposta.':'Não foi possível ouvir. Tente de novo ou escreva a resposta.'; };
-    rec.onend=()=>{ if(activeRec===rec){ activeRec=null; activeRecIdx=null; btn.textContent='🎤 Falar a resposta'; } };
-    activeRec=rec; activeRecIdx=i; btn.textContent='⏹ Parar de gravar';
-    try{ rec.start(); }catch(e){ stopDictation(); btn.textContent='🎤 Falar a resposta'; }
-   };
-  });
-  $('customBackBtn').onclick=()=>{ stopDictation(); state.view='list'; render(); };
-  $('sendCustomBtn').onclick=async ()=>{
+  const c=state.responsesLocal[CUSTOM_KEY]; const N=c.questions.length; const i=state.customIdx;
+  const ta=$('cqOne');
+  ta.oninput=()=>{ state.customDraft[i]=ta.value; const e=$('customErr'); if(e&&ta.value.trim()) e.style.display='none'; };
+  const showErr=m=>{ const e=$('customErr'); e.style.display='block'; e.textContent=m; };
+  $('micBtn') && ($('micBtn').onclick=()=>{
+   const btn=$('micBtn');
+   if(activeRec && activeRecIdx===i){ stopDictation(); btn.textContent='🎤 Toque aqui para RESPONDER FALANDO'; btn.style.background='#1D6F42'; return; }
    stopDictation();
-   document.querySelectorAll('[data-mic]').forEach(b=>b.textContent='🎤 Falar a resposta');
-   const c=state.responsesLocal[CUSTOM_KEY];
-   const vals=c.questions.map((q,i)=>(area(i).value||'').trim());
-   const missing=vals.map((v,i)=>v?null:i).filter(i=>i!==null);
-   document.querySelectorAll('.cq').forEach(el=>{ el.style.borderColor = vals[+el.dataset.i] ? 'var(--line)' : '#C00000'; });
-   if(missing.length){ const e=$('customErr'); e.style.display='block'; e.textContent='Falta responder: pergunta '+missing.map(i=>i+1).join(', ')+'.'; return; }
-   $('sendCustomBtn').disabled=true; $('sendCustomBtn').textContent='Enviando...';
-   const updated={...c,answers:vals,answeredAt:new Date().toISOString()};
+   const base=ta.value?ta.value.replace(/\s*$/,' '):'';
+   const rec=new SpeechRec(); rec.lang='pt-BR'; rec.continuous=true; rec.interimResults=true;
+   rec.onresult=ev=>{ let txt=''; for(let k=0;k<ev.results.length;k++){ txt+=ev.results[k][0].transcript; } ta.value=base+txt.trim(); state.customDraft[i]=ta.value; };
+   rec.onerror=ev=>{ showErr((ev.error==='not-allowed'||ev.error==='service-not-allowed')?'O microfone não foi liberado. Permita o uso do microfone no navegador, ou escreva a resposta.':'Não foi possível ouvir. Toque de novo no botão verde ou escreva a resposta.'); };
+   rec.onend=()=>{ if(activeRec===rec){ activeRec=null; activeRecIdx=null; btn.textContent='🎤 Toque aqui para RESPONDER FALANDO'; btn.style.background='#1D6F42'; } };
+   activeRec=rec; activeRecIdx=i; btn.textContent='⏹ Toque aqui para PARAR de gravar'; btn.style.background='#C00000';
+   try{ rec.start(); }catch(e){ stopDictation(); btn.textContent='🎤 Toque aqui para RESPONDER FALANDO'; btn.style.background='#1D6F42'; }
+  });
+  $('customPrevBtn').onclick=()=>{ stopDictation(); if(i===0){ state.view='list'; } else { state.customIdx=i-1; } render(); window.scrollTo&&window.scrollTo(0,0); };
+  $('sendOneBtn').onclick=async ()=>{
+   stopDictation();
+   const val=(ta.value||'').trim();
+   if(!val){ ta.style.borderColor='#C00000'; showErr(SpeechRec?'Falta a resposta. Toque no botão verde para falar, ou escreva no quadro.':'Falta a resposta. Escreva no quadro.'); return; }
+   const btn=$('sendOneBtn'); btn.disabled=true; btn.textContent='Enviando...';
+   const answers=c.questions.map((q,k)=>k===i?val:((c.answers||[])[k]||null));
+   const all=answers.every(a=>a&&String(a).trim());
+   const updated={...c,answers,answeredAt:all?new Date().toISOString():null};
    const persisted={...state.responsesLocal,[CUSTOM_KEY]:updated};
    const {data,error}=await supabase.rpc('save_submission_responses',{p_id:state.patientId,p_responses:persisted});
-   if(error||data===0){ $('sendCustomBtn').disabled=false; $('sendCustomBtn').textContent='Enviar respostas'; const e=$('customErr'); e.style.display='block'; e.textContent='Não foi possível enviar agora. Verifique a internet e tente de novo.'; return; }
-   state.responsesLocal=persisted; state.customDraft=null;
+   if(error||data===0){ btn.disabled=false; btn.textContent=i===N-1?'✓ Enviar resposta e terminar':'✓ Enviar resposta e ir para a próxima'; showErr('Não foi possível enviar agora. Verifique a internet e toque de novo em "Enviar resposta". O que você escreveu continua aqui.'); return; }
+   state.responsesLocal=persisted; state.customDraft[i]=val;
+   const nextUnanswered=answers.findIndex((a,k)=>k>i&&!a);
+   const firstUnanswered=answers.findIndex(a=>!a);
+   if(nextUnanswered>=0||firstUnanswered>=0){ state.customIdx=nextUnanswered>=0?nextUnanswered:firstUnanswered; render(); window.scrollTo&&window.scrollTo(0,0); return; }
+   state.customDraft=null; state.customIdx=null;
    const rest=activeKeys(state.assignedKeys).filter(k=>!state.responsesLocal[k]);
-   state.view = rest.length ? 'list' : 'thanks'; render();
+   state.view = rest.length ? 'list' : 'thanks'; render(); window.scrollTo&&window.scrollTo(0,0);
   };
  }
 
@@ -2531,7 +2537,7 @@ function bind(){
    $('seeListBtn').onclick = ()=>{ if(justDoneTimer){ clearTimeout(justDoneTimer); justDoneTimer=null; } state.view='list'; render(); };
    justDoneTimer = setTimeout(goNext, 5000);
   } else {
-   justDoneTimer = setTimeout(()=>{ state.customDraft=null; state.view = customPending() ? 'custom' : 'thanks'; render(); }, 2200);
+   justDoneTimer = setTimeout(()=>{ state.customDraft=null; state.customIdx=null; state.view = customPending() ? 'custom' : 'thanks'; render(); }, 2200);
   }
  }
 
