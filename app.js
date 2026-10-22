@@ -187,7 +187,7 @@ function consistencyFlags(p){
   if(e[0]<e[2]) add('Contradição','Dor em repouso menor que no melhor momento do dia',say('eva',0),say('eva',2),'"Você marcou menos dor agora do que no melhor momento do dia. Hoje está melhor que o habitual?"');
  }
  // 2) Escadas
- cross('Subir escadas',[src('lysholm',6,0,3),src('lefs',12,4,0),src('wiq',11,0,4),src('fiqr',5,0,10)],'"Me explica como é subir escada no seu dia a dia: você sobe sozinho, segurando no corrimão, um degrau por vez?"');
+ cross('Subir escadas',[src('lysholm',6,0,3),src('lefs',12,4,0),src('wiq',11,0,4),src('fiqr',5,0,10),src('haq',8,0,3)],'"Me explica como é subir escada no seu dia a dia: você sobe sozinho, segurando no corrimão, um degrau por vez?"');
  // 3) Agachar
  cross('Agachar',[src('lysholm',7,0,3),src('lefs',5,4,0)],'"Você consegue agachar, por exemplo para pegar algo no chão? Até onde?"');
  // 4) Caminhar dentro de casa / distância curta
@@ -210,6 +210,7 @@ function consistencyFlags(p){
   if(w&&w[8]===0&&r&&r[18]===1) add('Contradição','Vestir-se: nenhuma dificuldade, mas se veste com ajuda de outras pessoas',say('whodas',8),say('rmdq',18),'"Como você se veste hoje? Alguém te ajuda em alguma parte, como calça, meia ou sapato?"');
   if(w&&w[8]===0&&s){ const i=[7,8,9].find(i=>s[i]>=9); if(i!==undefined) add('Contradição','Vestir-se: nenhuma dificuldade, mas dificuldade máxima no ombro para se vestir',say('whodas',8),say('spadi',i),'"Como você se veste hoje? Usa o outro braço ou alguém te ajuda?"'); }
   const l=get('lefs'); if(l&&l[4]===4&&r&&r[15]===1) add('Contradição','Colocar meias: nenhuma dificuldade num questionário e problema no outro',say('lefs',4),say('rmdq',15),'"Como você faz para colocar meia e sapato?"');}
+ cross('Vestir-se',[src('whodas',8,0,4),src('haq',0,0,3)],'"Como você se veste hoje? Alguém te ajuda em alguma parte?"');
  // 8) Virar na cama
  cross('Virar na cama',[src('lefs',19,4,0),(()=>{const r=get('rmdq'); return r&&Number.isInteger(r[13])?{k:'rmdq',i:13,state:r[13]===1?'max':'none'}:null;})()],'"À noite, como é para você se virar na cama?"');
  // 9) Mapa de dor x questionário da região
@@ -261,6 +262,11 @@ function flagsLines(p){
  return L;
 }
 
+const HAQ_AIDS_REMINDER='A tese de Ferraz (1990) diz que, quando o paciente faz a atividade com apoio, bengala ou órtese, a nota do componente sobe automaticamente para 3. No HAQ-DI de Stanford, a mesma regra sobe para 2, não para 3. Como o formulário não tem a seção perguntando sobre dispositivos, o site não aplica esse ajuste. Se o paciente usar bengala ou órtese, considere no laudo, citando a regra da tese.';
+function haqReminderHtml(p){
+ if(!(p&&p.responses&&p.responses.haq)) return '';
+ return `<div style="background:var(--r2-bg);border:2px solid var(--r2-txt);border-radius:10px;padding:12px 14px;margin:8px 0;font-size:13.5px;line-height:1.5;"><strong>📌 Lembrete para o laudo (HAQ):</strong> ${HAQ_AIDS_REMINDER}</div>`;
+}
 const CUSTOM_KEY='__custom';
 function customOf(p){ const c=p&&p.responses&&p.responses[CUSTOM_KEY]; return (c&&Array.isArray(c.questions)&&c.questions.length)?c:null; }
 function instrumentEntries(resp){ return Object.entries(resp||{}).filter(([k])=>k!==CUSTOM_KEY); }
@@ -283,6 +289,7 @@ function stopDictation(){ const r=activeRec; activeRec=null; activeRecIdx=null; 
 function buildReportText(p){
  const lines=['AVALIAÇÃO FUNCIONAL — '+p.name,'Registro criado em: '+new Date(p.created_at).toLocaleString('pt-BR'),''];
  instrumentEntries(p.responses).forEach(([k,r])=>lines.push('='.repeat(60),(effectiveStatus(k,r)==='LEGACY_INVALID'?LEGACY_INSTRUMENTS[k]?.title:QUESTIONNAIRES[k]?.title)||k,'Status: '+statusLabel(effectiveStatus(k,r)),...responseLines(k,r),''));
+ if(p.responses&&p.responses.haq) lines.push('LEMBRETE PARA O LAUDO (HAQ): '+HAQ_AIDS_REMINDER,'');
  lines.push(...customLines(customOf(p)));
  lines.push(...ifbrLines(p));
  lines.push(...flagsLines(p));
@@ -865,6 +872,7 @@ const LEGACY_SCHEMA = {
 };
 const ICT_DISEASE_CATEGORIES = Object.freeze(['Nenhuma','1 doença','2 doenças','3 doenças','4 doenças','5 ou mais doenças']);
 const ITEM_HELP = {
+ haq:{0:'Pense na última semana. Você é capaz de fazer esta atividade? Escolha a resposta que mais combina com você.',8:'Você é capaz de: subir 5 degraus?'},
  fiqr:{0:'Quanto a fibromialgia dificultou essa atividade nos últimos 7 dias? 0 = sem dificuldade; 10 = muita dificuldade (ou não conseguiu fazer).',9:'Agora: o impacto geral da fibromialgia nos últimos 7 dias. 0 = nunca; 10 = sempre.',11:'Agora: a intensidade dos sintomas nos últimos 7 dias. Em todas estas, 0 = melhor situação e 10 = pior situação.'},
  bctq:{11:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade? Se esta não for a mão que você usa para escrever, marque \"não se aplica\".",12:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",13:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",14:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",15:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",16:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",17:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",18:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?"},
  lysholm:{0:"Você manca (anda puxando a perna) por causa do joelho?",1:"Você precisa de bengala ou muleta para andar?",2:"O joelho \"trava\" (fica preso e não dobra ou não estica) de repente? A última opção só vale se o joelho ficou travado durante um exame médico.",3:"O joelho \"falseia\" (falha, como se fosse sair do lugar ou fazer você cair)? Quando isso acontece?",4:"Quando a dor no joelho aparece?",5:"Quando o joelho incha?",6:"Como é subir escadas por causa do joelho?",7:"Como é agachar por causa do joelho? \"Não além de 90 graus\" quer dizer que você só consegue agachar até a metade."},
@@ -1388,6 +1396,19 @@ register('fiqr',{
    interpretation:'Faixa de gravidade de referência proposta na literatura internacional para o FIQR: '+band+'. Essas faixas não foram estabelecidas especificamente na validação brasileira de Paiva et al. (2013); usar como referência descritiva.'};}
 },{version:'FIQR-Br-Paiva2013-GAIPA-v2',licenseStatus:'NOT_VERIFIED',source:'https://doi.org/10.1186/ar2783',brazilSource:'https://doi.org/10.1007/s10067-013-2259-0',missing:'21/21; sem imputação.',note:'Versão brasileira de Paiva et al. (Clin Rheumatol, 2013), com R. M. Bennett (autor do FIQR original) como coautor. Texto conforme o formulário do GAIPA/Departamento de Fisioterapia da UFC (gaipa.ufc.br), que cita Paiva et al. 2013. As 21 perguntas foram conferidas contra uma segunda fonte independente (Fibrodor/dorcronica.blog.br): enunciados coincidentes, com diferenças mínimas de redação; as âncoras de 5 itens de sintomas diferiam, e foram adotadas as do GAIPA, mais próximas do original em inglês. Não misturar com a FIQR-Br de Lupi et al. (Disabil Rehabil, 2017). Situação de licença de uso não verificada.'});
 
+register('haq',{
+ title:'HAQ — Questionário de Avaliação de Saúde (capacidade funcional)',type:'likert',
+ about:'Sobre a sua capacidade de fazer atividades do dia a dia: vestir-se, comer, caminhar, tomar banho, pegar objetos.',
+ intro:'Pensando na última semana, responda: VOCÊ É CAPAZ DE fazer cada uma das atividades a seguir? Escolha a resposta que melhor descreve a sua dificuldade.',
+ items:["Vestir-se, inclusive amarrar os cordões dos sapatos e abotoar suas roupas?", "Lavar sua cabeça e seus cabelos?", "Levantar-se de maneira ereta de uma cadeira de encosto reto e sem braços?", "Deitar-se e levantar-se da cama?", "Cortar um pedaço de carne?", "Levar à boca um copo ou uma xícara cheia de café, leite ou água?", "Abrir um saco de leite comum?", "Caminhar em lugares planos?", "Subir 5 degraus?", "Lavar seu corpo inteiro e secá-lo após o banho?", "Tomar um banho de chuveiro?", "Sentar-se e levantar-se de um vaso sanitário?", "Levantar os braços e pegar um objeto de aproximadamente 2,5 quilos que está posicionado pouco acima da cabeça?", "Curvar-se para pegar suas roupas no chão?", "Segurar-se em pé no ônibus ou metrô?", "Abrir potes ou vidros de conservas que tenham sido previamente abertos?", "Abrir e fechar torneiras?", "Fazer compras nas redondezas aonde mora?", "Entrar e sair de um ônibus?", "Realizar tarefas tais como usar a vassoura para varrer e rodo para puxar a água?"],
+ opts:['Sem qualquer dificuldade','Com alguma dificuldade','Com muita dificuldade','Incapaz de fazer'],
+ score:a=>{const G=[[0,1],[2,3],[4,5,6],[7,8],[9,10,11],[12,13],[14,15,16],[17,18,19]];const names=['vestir-se','levantar-se','alimentar-se','caminhar','higiene pessoal','alcançar objetos','apreender objetos','outras atividades'];
+  const comp=G.map(g=>Math.max(...g.map(i=>a[i])));const m=comp.reduce((s,v)=>s+v,0)/8;
+  const band=m<=1?'leve (0 a 1)':m<=2?'moderada (> 1 a 2)':'grave (> 2 a 3)';
+  return {metrics:[metric('HAQ',m,3,'Maior = maior incapacidade (0–3)')],calculation:{components:Object.fromEntries(names.map((n,i)=>[n,comp[i]])),formula:'Média aritmética dos maiores escores de cada um dos 8 componentes (formulário do PCDT/SUS).'},
+   interpretation:'Incapacidade funcional '+band+', segundo faixas descritivas usadas na literatura brasileira. Não inclui o ajuste por uso de apoio, bengala ou órteses descrito por Ferraz (1990): se o paciente usa algum dispositivo, considerar isso na análise.'};}
+},{version:'HAQ-Br-Ferraz1990-Tabela1-v2',licenseStatus:'BRAZILIAN_OFFICIAL_PROTOCOL',source:'https://doi.org/10.1002/art.1780230208',brazilSource:'Ferraz MB. Tradução para o português e validação do questionário para avaliar a capacidade funcional Stanford Health Assessment Questionnaire. Tese (Doutorado), Escola Paulista de Medicina/UNIFESP, 1990, Tabela 1. https://repositorio.unifesp.br/handle/11600/13967',missing:'20/20; sem imputação.',note:'Texto da Tabela 1 da tese original de Ferraz (EPM/UNIFESP, 1990), "Versão em português do HAQ", com a pergunta-guia "Você é capaz de:" e o período da semana anterior, ambos descritos na tese. Ortografia atualizada (acentos e vírgula decimal), sem mudança de redação. Comparado item a item com o formulário do SUS (SES-MS, PCDT Artrite Reumatoide): 10 itens idênticos e 10 com pequenas diferenças de redação no formulário do SUS, sem mudança de sentido; adotada a redação da tese. Pontuação conforme a tese: nota do componente = maior nota entre suas questões; escore final = média dos 8 componentes (0 a 3). A tese descreve que, quando a atividade é feita com auxílio de apoio, bengala ou órteses, a nota do componente é elevada para 3; essa regra não é aplicada automaticamente porque o formulário não contém a seção de dispositivos (o HAQ-DI de Stanford usa elevação para 2, não 3).'});
+
 register('phq9',{
  title:'PHQ-9 — Questionário sobre a Saúde do Paciente (depressão)',type:'likert',
  about:'Sobre como você tem se sentido emocionalmente nas últimas duas semanas.',
@@ -1523,7 +1544,7 @@ for(const [alias,target] of Object.entries(ASSIGNMENT_ALIASES))INSTRUMENT_META[a
 
 const QUESTIONNAIRES={...LEGACY_INSTRUMENTS,...CURRENT_VALIDATED_INSTRUMENTS};
 
-const QORDER = ["odi","ndi","tsk13","quickdash","spadi","bctq","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","lysholm","sfi","nmq","ict","fiqr","wpi","sss","hoos","koos","fss","psqi","hit6","fabqpa","comi","hads","phq9","gad7","pcl5","csi","orebro","ess","chalder","sf36","masq"];
+const QORDER = ["odi","ndi","tsk13","quickdash","spadi","bctq","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","lysholm","sfi","nmq","ict","fiqr","haq","wpi","sss","hoos","koos","fss","psqi","hit6","fabqpa","comi","hads","phq9","gad7","pcl5","csi","orebro","ess","chalder","sf36","masq"];
 
 /* Autotestes executáveis sem rede. Fixtures não utilizam o próprio algoritmo
    como oráculo. Para executar no navegador: ?devtest=1. */
@@ -1543,7 +1564,7 @@ function runSelfTests(){
  const near=(a,b)=>Math.abs(a-b)<1e-9;
  const values=(k,a)=>validateAndScore(k,a).metrics?.map(m=>m.value);
  const expected={orebro:[[31],[50],[70]],
-  sfi:[[100],[50],[0]],fabq:[[0,0],[12,21],[24,42]],rmdq:[[0],[0],[24]],eva:[[0,0,0,0],[5,5,5,5],[10,10,10,10]],phq9:[[0],[9],[27]],whodas:[[12],[36],[60]],bctq:[[1,1],[3,3],[5,5]],lysholm:[[100],[57],[0]],pcl5:[[0],[40],[80]],fiqr:[[0,0,0,0],[15,10,25,50],[30,20,50,100]],spadi:[[0,0,0],[50,50,50],[100,100,100]],gad7:[[0],[7],[21]],
+  sfi:[[100],[50],[0]],fabq:[[0,0],[12,21],[24,42]],rmdq:[[0],[0],[24]],eva:[[0,0,0,0],[5,5,5,5],[10,10,10,10]],phq9:[[0],[9],[27]],whodas:[[12],[36],[60]],bctq:[[1,1],[3,3],[5,5]],lysholm:[[100],[57],[0]],pcl5:[[0],[40],[80]],haq:[[0],[1],[3]],fiqr:[[0,0,0,0],[15,10,25,50],[30,20,50,100]],spadi:[[0,0,0],[50,50,50],[100,100,100]],gad7:[[0],[7],[21]],
   psfs:[[0,0,0,0],[5,5,5,5],[10,10,10,10]],lefs:[[0],[40],[80]],ict:[[7],[35],[49]],csi:[[0],[50],[100]],
   tsk13:[[13],[26],[52]],dn4:[[0],[0],[7]],wiq:[[100,100,100],[50,50,50],[0,0,0]],chalder:[[0],[0],[11]],comi:[[0],[5],[10]],
   sf36:[[0,0,0,50,40,50,100,60],[50,0,0,50,48,50,55,50],[100,100,100,50,60,50,0,40]]
@@ -2169,7 +2190,7 @@ dashboard(){
       <div><div class="patient-name">${p.name}</div><div class="patient-meta">${new Date(p.created_at).toLocaleString('pt-BR')} · ${keys.length}/${(p.assigned && p.assigned.length) ? p.assigned.length : QORDER.length} questionários</div></div>
       <button class="del-link" data-del="${p.id}">excluir</button>
     </div>
-    <div class="patient-body ${open?'open':''}">${actionsHtml}${inner}${flagsHtml(p)}${customHtml(p)}${ifbrCardHtml(p)}</div>
+    <div class="patient-body ${open?'open':''}">${actionsHtml}${inner}${haqReminderHtml(p)}${flagsHtml(p)}${customHtml(p)}${ifbrCardHtml(p)}</div>
   </div>`;
  }).join('');
  const now = new Date();
