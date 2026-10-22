@@ -211,6 +211,7 @@ function consistencyFlags(p){
   if(w&&w[8]===0&&s){ const i=[7,8,9].find(i=>s[i]>=9); if(i!==undefined) add('Contradição','Vestir-se: nenhuma dificuldade, mas dificuldade máxima no ombro para se vestir',say('whodas',8),say('spadi',i),'"Como você se veste hoje? Usa o outro braço ou alguém te ajuda?"'); }
   const l=get('lefs'); if(l&&l[4]===4&&r&&r[15]===1) add('Contradição','Colocar meias: nenhuma dificuldade num questionário e problema no outro',say('lefs',4),say('rmdq',15),'"Como você faz para colocar meia e sapato?"');}
  cross('Vestir-se',[src('whodas',8,0,4),src('haq',0,0,3)],'"Como você se veste hoje? Alguém te ajuda em alguma parte?"');
+ cross('Lavar as costas',[src('quickdash',3,0,4),src('spadi',6,0,10)],'"Como você faz para lavar as costas no banho? Usa o outro braço, uma bucha com cabo, ou alguém ajuda?"');
  // 8) Virar na cama
  cross('Virar na cama',[src('lefs',19,4,0),(()=>{const r=get('rmdq'); return r&&Number.isInteger(r[13])?{k:'rmdq',i:13,state:r[13]===1?'max':'none'}:null;})()],'"À noite, como é para você se virar na cama?"');
  // 9) Mapa de dor x questionário da região
@@ -872,6 +873,7 @@ const LEGACY_SCHEMA = {
 };
 const ICT_DISEASE_CATEGORIES = Object.freeze(['Nenhuma','1 doença','2 doenças','3 doenças','4 doenças','5 ou mais doenças']);
 const ITEM_HELP = {
+ quickdash:{0:'Pense na semana passada. Não importa qual mão ou braço você usa: responda sobre a sua habilidade de fazer a atividade.',8:'Agora: a gravidade dos sintomas na semana passada.'},
  haq:{0:'Pense na última semana. Você é capaz de fazer esta atividade? Escolha a resposta que mais combina com você.',8:'Você é capaz de: subir 5 degraus?'},
  fiqr:{0:'Quanto a fibromialgia dificultou essa atividade nos últimos 7 dias? 0 = sem dificuldade; 10 = muita dificuldade (ou não conseguiu fazer).',9:'Agora: o impacto geral da fibromialgia nos últimos 7 dias. 0 = nunca; 10 = sempre.',11:'Agora: a intensidade dos sintomas nos últimos 7 dias. Em todas estas, 0 = melhor situação e 10 = pior situação.'},
  bctq:{11:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade? Se esta não for a mão que você usa para escrever, marque \"não se aplica\".",12:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",13:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",14:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",15:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",16:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",17:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?",18:"Num dia típico, durante as duas últimas semanas, os sintomas da sua mão ou punho têm causado alguma dificuldade em fazer esta atividade?"},
@@ -1409,6 +1411,30 @@ register('haq',{
    interpretation:'Incapacidade funcional '+band+', segundo faixas descritivas usadas na literatura brasileira. Não inclui o ajuste por uso de apoio, bengala ou órteses descrito por Ferraz (1990): se o paciente usa algum dispositivo, considerar isso na análise.'};}
 },{version:'HAQ-Br-Ferraz1990-Tabela1-v2',licenseStatus:'BRAZILIAN_OFFICIAL_PROTOCOL',source:'https://doi.org/10.1002/art.1780230208',brazilSource:'Ferraz MB. Tradução para o português e validação do questionário para avaliar a capacidade funcional Stanford Health Assessment Questionnaire. Tese (Doutorado), Escola Paulista de Medicina/UNIFESP, 1990, Tabela 1. https://repositorio.unifesp.br/handle/11600/13967',missing:'20/20; sem imputação.',note:'Texto da Tabela 1 da tese original de Ferraz (EPM/UNIFESP, 1990), "Versão em português do HAQ", com a pergunta-guia "Você é capaz de:" e o período da semana anterior, ambos descritos na tese. Ortografia atualizada (acentos e vírgula decimal), sem mudança de redação. Comparado item a item com o formulário do SUS (SES-MS, PCDT Artrite Reumatoide): 10 itens idênticos e 10 com pequenas diferenças de redação no formulário do SUS, sem mudança de sentido; adotada a redação da tese. Pontuação conforme a tese: nota do componente = maior nota entre suas questões; escore final = média dos 8 componentes (0 a 3). A tese descreve que, quando a atividade é feita com auxílio de apoio, bengala ou órteses, a nota do componente é elevada para 3; essa regra não é aplicada automaticamente porque o formulário não contém a seção de dispositivos (o HAQ-DI de Stanford usa elevação para 2, não 3).'});
 
+register('quickdash',{
+ title:'QuickDASH — Disfunções do braço, ombro e mão',type:'likert',
+ about:'Sobre sintomas e dificuldades com o braço, o ombro ou a mão, na semana passada.',
+ intro:'Esse questionário pergunta sobre seus sintomas, assim como suas habilidades para fazer certas atividades. Por favor responda cada questão, baseando-se em sua condição na semana passada. Se você não teve a oportunidade de fazer uma das atividades na semana passada, por favor, tente estimar qual resposta seria a mais correta. Não importa qual mão ou braço você usa para fazer a atividade; por favor, responda baseando-se na sua habilidade independentemente da forma como você faz a tarefa.',
+ items:["Abrir um vidro novo ou com a tampa muito apertada.", "Fazer tarefas domésticas pesadas (por exemplo: lavar paredes, lavar o chão).", "Carregar uma sacola ou uma maleta.", "Lavar suas costas.", "Usar uma faca para cortar alimentos.", "Atividades recreativas que exigem alguma força ou impacto nos braços, ombros ou mãos (por exemplo: jogar vôlei, martelar).", "Durante a semana passada, em que ponto o seu problema com braço, ombro ou mão afetaram suas atividades normais com família, amigos, vizinhos ou colegas?", "Durante a semana passada, o seu trabalho ou outras atividades diárias regulares foram limitadas devido ao seu problema com braço, ombro ou mão?", "Dor no braço, ombro ou mão.", "Desconforto na pele (alfinetadas) no braço, ombro ou mão.", "Durante a semana passada, quanto de dificuldade você teve para dormir por causa da dor no seu braço, ombro ou mão?"],
+ optsPerItem:[["Não houve dificuldade", "Houve pouca dificuldade", "Houve dificuldade moderada", "Dificuldade severa", "Não conseguiu fazer"], ["Não houve dificuldade", "Houve pouca dificuldade", "Houve dificuldade moderada", "Dificuldade severa", "Não conseguiu fazer"], ["Não houve dificuldade", "Houve pouca dificuldade", "Houve dificuldade moderada", "Dificuldade severa", "Não conseguiu fazer"], ["Não houve dificuldade", "Houve pouca dificuldade", "Houve dificuldade moderada", "Dificuldade severa", "Não conseguiu fazer"], ["Não houve dificuldade", "Houve pouca dificuldade", "Houve dificuldade moderada", "Dificuldade severa", "Não conseguiu fazer"], ["Não houve dificuldade", "Houve pouca dificuldade", "Houve dificuldade moderada", "Dificuldade severa", "Não conseguiu fazer"], ["Não afetou", "Afetou pouco", "Afetou moderadamente", "Afetou muito", "Afetou extremamente"], ["Não limitou", "Limitou pouco", "Limitou moderadamente", "Limitou muito", "Não conseguiu fazer"], ["Nenhuma", "Pouca", "Moderada", "Severa", "Extrema"], ["Nenhuma", "Pouca", "Moderada", "Severa", "Extrema"], ["Não houve dificuldade", "Pouca dificuldade", "Dificuldade moderada", "Dificuldade severa", "Tão difícil que eu não pude dormir"]],
+ complete:a=>a.filter(v=>Number.isInteger(v)).length>=10,
+ score:a=>{const v=a.filter(Number.isInteger).map(x=>x+1);const n=v.length;const s=v.reduce((p,c)=>p+c,0);const sc=((s/n)-1)*25;
+  return {metrics:[metric('QuickDASH',sc,100,'Maior = maior incapacidade (0–100)',{answered:n,items:11})],calculation:{sum:s,answered:n,formula:'[(soma das respostas ÷ n) − 1] × 25, sendo n o número de respostas válidas; não calculado com mais de 1 item sem resposta.'},
+   interpretation:'Escore de 0 (sem incapacidade) a 100 (incapacidade mais grave). O instrumento não tem faixas oficiais de gravidade.'};}
+},{version:'QuickDASH-Br-Bena2015-Anexo1-v1',licenseStatus:'NOT_VERIFIED',source:'https://doi.org/10.2106/JBJS.D.02068',brazilSource:'Texto do Anexo 1 de Bená MI. Validação da versão brasileira do questionário QuickDASH em pacientes portadores de sequelas de queimaduras. Monografia, Programa de Aprimoramento Profissional SES-SP/FUNDAP, HC-FMRP/USP, 2015.',missing:'No máximo 1 item sem resposta (n ≥ 10).',minAnswered:10,note:'Texto do Anexo 1 de Bená MI. Validação da versão brasileira do questionário QuickDASH em pacientes portadores de sequelas de queimaduras. Monografia, Programa de Aprimoramento Profissional SES-SP/FUNDAP, HC-FMRP/USP, 2015. Fórmula oficial reproduzida no próprio anexo. A monografia não identifica qual tradução brasileira reproduz. Os direitos do DASH/QuickDASH pertencem ao Institute for Work & Health (Toronto); a permissão para uso em sistema eletrônico não foi verificada (consultar dash.iwh.on.ca).'});
+CURRENT_VALIDATED_INSTRUMENTS.quickdash.answerPolicy.allowNA=true;
+
+register('quickdash_trab',{
+ title:'QuickDASH — módulo trabalho (opcional)',type:'likert',
+ about:'Sobre o impacto do problema no braço, ombro ou mão no seu trabalho, na semana passada.',
+ intro:'As questões seguintes perguntam sobre o impacto do seu problema no braço, ombro ou mão em sua habilidade de trabalhar (incluindo tarefas domésticas se esta é sua principal função). Por favor, escolha a resposta que melhor descreve sua habilidade física na semana passada. Você teve alguma dificuldade para:',
+ items:["Uso de sua técnica habitual para seu trabalho?", "Fazer seu trabalho usual por causa de dor em seu braço, ombro ou mão?", "Fazer seu trabalho tão bem quanto você gostaria?", "Usar a mesma quantidade de tempo fazendo seu trabalho?"],
+ opts:["Sem dificuldade", "Pouca dificuldade", "Dificuldade moderada", "Dificuldade severa", "Não conseguiu fazer"],
+ score:a=>{const v=a.map(x=>x+1);const s=v.reduce((p,c)=>p+c,0);const sc=((s/4)-1)*25;
+  return {metrics:[metric('QuickDASH — trabalho',sc,100,'Maior = maior incapacidade no trabalho (0–100)')],calculation:{sum:s,formula:'[(soma das 4 respostas ÷ 4) − 1] × 25; exige as 4 respostas.'},
+   interpretation:'Módulo opcional do QuickDASH, pontuado separadamente; não entra no escore principal. Sem faixas oficiais de gravidade.'};}
+},{version:'QuickDASH-Trab-Br-Bena2015-Anexo1-v1',licenseStatus:'NOT_VERIFIED',source:'https://doi.org/10.2106/JBJS.D.02068',brazilSource:'Texto do Anexo 1 de Bená MI. Validação da versão brasileira do questionário QuickDASH em pacientes portadores de sequelas de queimaduras. Monografia, Programa de Aprimoramento Profissional SES-SP/FUNDAP, HC-FMRP/USP, 2015.',missing:'4/4; sem imputação.',note:'Texto do Anexo 1 de Bená MI. Validação da versão brasileira do questionário QuickDASH em pacientes portadores de sequelas de queimaduras. Monografia, Programa de Aprimoramento Profissional SES-SP/FUNDAP, HC-FMRP/USP, 2015. Aplicar apenas para quem trabalha (ou cuja principal função são tarefas domésticas). Direitos do Institute for Work & Health; permissão para uso eletrônico não verificada.'});
+
 register('phq9',{
  title:'PHQ-9 — Questionário sobre a Saúde do Paciente (depressão)',type:'likert',
  about:'Sobre como você tem se sentido emocionalmente nas últimas duas semanas.',
@@ -1544,7 +1570,7 @@ for(const [alias,target] of Object.entries(ASSIGNMENT_ALIASES))INSTRUMENT_META[a
 
 const QUESTIONNAIRES={...LEGACY_INSTRUMENTS,...CURRENT_VALIDATED_INSTRUMENTS};
 
-const QORDER = ["odi","ndi","tsk13","quickdash","spadi","bctq","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","lysholm","sfi","nmq","ict","fiqr","haq","wpi","sss","hoos","koos","fss","psqi","hit6","fabqpa","comi","hads","phq9","gad7","pcl5","csi","orebro","ess","chalder","sf36","masq"];
+const QORDER = ["odi","ndi","tsk13","quickdash","quickdash_trab","spadi","bctq","whodas","eva","dn4","fabq","pcs","rmdq","mjoa","psfs","wiq","lefs","lysholm","sfi","nmq","ict","fiqr","haq","wpi","sss","hoos","koos","fss","psqi","hit6","fabqpa","comi","hads","phq9","gad7","pcl5","csi","orebro","ess","chalder","sf36","masq"];
 
 /* Autotestes executáveis sem rede. Fixtures não utilizam o próprio algoritmo
    como oráculo. Para executar no navegador: ?devtest=1. */
@@ -1564,7 +1590,7 @@ function runSelfTests(){
  const near=(a,b)=>Math.abs(a-b)<1e-9;
  const values=(k,a)=>validateAndScore(k,a).metrics?.map(m=>m.value);
  const expected={orebro:[[31],[50],[70]],
-  sfi:[[100],[50],[0]],fabq:[[0,0],[12,21],[24,42]],rmdq:[[0],[0],[24]],eva:[[0,0,0,0],[5,5,5,5],[10,10,10,10]],phq9:[[0],[9],[27]],whodas:[[12],[36],[60]],bctq:[[1,1],[3,3],[5,5]],lysholm:[[100],[57],[0]],pcl5:[[0],[40],[80]],haq:[[0],[1],[3]],fiqr:[[0,0,0,0],[15,10,25,50],[30,20,50,100]],spadi:[[0,0,0],[50,50,50],[100,100,100]],gad7:[[0],[7],[21]],
+  sfi:[[100],[50],[0]],fabq:[[0,0],[12,21],[24,42]],rmdq:[[0],[0],[24]],eva:[[0,0,0,0],[5,5,5,5],[10,10,10,10]],phq9:[[0],[9],[27]],whodas:[[12],[36],[60]],bctq:[[1,1],[3,3],[5,5]],lysholm:[[100],[57],[0]],pcl5:[[0],[40],[80]],haq:[[0],[1],[3]],quickdash:[[0],[50],[100]],quickdash_trab:[[0],[50],[100]],fiqr:[[0,0,0,0],[15,10,25,50],[30,20,50,100]],spadi:[[0,0,0],[50,50,50],[100,100,100]],gad7:[[0],[7],[21]],
   psfs:[[0,0,0,0],[5,5,5,5],[10,10,10,10]],lefs:[[0],[40],[80]],ict:[[7],[35],[49]],csi:[[0],[50],[100]],
   tsk13:[[13],[26],[52]],dn4:[[0],[0],[7]],wiq:[[100,100,100],[50,50,50],[0,0,0]],chalder:[[0],[0],[11]],comi:[[0],[5],[10]],
   sf36:[[0,0,0,50,40,50,100,60],[50,0,0,50,48,50,55,50],[100,100,100,50,60,50,0,40]]
@@ -1592,7 +1618,7 @@ function runSelfTests(){
     check(k+' inválido '+i+' '+JSON.stringify(value),validateAndScore(k,bad).status==='INVALID_INPUT');
    }
    const missing=cloneAnswers(a);missing[i]=null;const r=validateAndScore(k,missing);
-   if(k==='sf36'||k==='whodas'||k==='bctq')check(k+' missing permitido '+i,r.status==='VALID_OFFICIAL');
+   if(k==='sf36'||k==='whodas'||k==='bctq'||k==='quickdash')check(k+' missing permitido '+i,r.status==='VALID_OFFICIAL');
    else check(k+' missing proibido '+i,r.status==='INCOMPLETE'&&!r.metrics);
   }
   const empty=Array(a.length).fill(null);check(k+' vazio',validateAndScore(k,empty).status==='INCOMPLETE');
