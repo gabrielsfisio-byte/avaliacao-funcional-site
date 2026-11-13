@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Compromissos dos leads — Gabriel dos Santos</title>
+<link rel="stylesheet" href="agenda.css?v=20261103">
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script defer src="config.js"></script>
+<script defer src="agenda.js?v=20261103"></script>
+</head>
+<body>
+<div class="agenda-app">
+ <header class="agenda-top">
+  <div><p class="eyebrow">SEU PAINEL PROFISSIONAL</p><p class="brand">Gabriel dos Santos</p></div>
+  <nav aria-label="Navegação do profissional"><a href="index.html">AVALIAÇÕES</a><button id="agendaLogout" type="button" hidden>SAIR</button></nav>
+ </header>
+ <main>
+  <div id="agendaLoading" class="card loading" role="status">Conferindo seu acesso…</div>
+  <section id="agendaGate" class="card login" aria-labelledby="loginTitle" hidden>
+   <p class="eyebrow">ÁREA DO PROFISSIONAL</p><h1 id="loginTitle">Seus compromissos, em um só lugar.</h1>
+   <p class="muted">Entre com o mesmo PIN que você usa no painel de avaliação.</p>
+   <form id="agendaLoginForm"><label for="agendaPin">PIN de acesso</label><input id="agendaPin" type="password" inputmode="numeric" pattern="[0-9]+" maxlength="6" autocomplete="current-password" required>
+    <p id="agendaLoginError" class="error" role="alert" hidden></p><button class="button primary" id="agendaLogin" type="submit">ENTRAR NA AGENDA</button>
+   </form>
+  </section>
+  <section id="agendaDashboard" hidden aria-labelledby="agendaTitle">
+   <div class="page-heading"><div><p class="eyebrow">QUEM COMBINOU DE VOLTAR</p><h1 id="agendaTitle">Compromissos dos leads</h1><p class="muted">Telefone, data combinada e o próximo passo.</p></div><button class="button primary" type="button" id="agendaNew">+ NOVO COMPROMISSO</button></div>
+   <div id="agendaNotice" class="notice" role="status" hidden></div>
+   <div id="agendaError" class="error-box" role="alert" hidden><p id="agendaErrorText"></p><button class="button secondary" id="agendaRetry" type="button">TENTAR NOVAMENTE</button></div>
+   <div class="summary" aria-label="Compromissos em aberto">
+    <button type="button" data-period="today"><span>PARA HOJE</span><strong id="agendaTodayCount">0</strong></button>
+    <button type="button" data-period="overdue"><span>ATRASADOS</span><strong id="agendaOverdueCount">0</strong></button>
+    <button type="button" data-period="upcoming"><span>PRÓXIMOS</span><strong id="agendaUpcomingCount">0</strong></button>
+   </div>
+   <div class="card tools">
+    <label class="sr-only" for="agendaSearch">Buscar pelo nome ou telefone</label><input id="agendaSearch" type="search" placeholder="Buscar nome ou telefone…" autocomplete="off">
+    <div class="tool-row"><label for="agendaStatus">Mostrar<select id="agendaStatus"><option value="open">Em aberto</option><option value="all">Todos os status</option><option value="pending">Retomar contato</option><option value="contacted">Contato realizado</option><option value="paid">Pago</option><option value="closed">Encerrado</option></select></label><button class="button secondary" id="agendaRefresh" type="button">ATUALIZAR</button></div>
+    <div class="periods" role="group" aria-label="Período"><button type="button" data-period="today">HOJE</button><button type="button" data-period="overdue">ATRASADOS</button><button type="button" data-period="upcoming">PRÓXIMOS</button><button type="button" data-period="all">TODOS</button></div>
+    <div id="agendaSelectedDate" class="selected-day" hidden><span></span><button type="button" id="agendaClearDay">LIMPAR DIA ×</button></div>
+    <details id="agendaCalendar"><summary>VER CALENDÁRIO</summary><div class="calendar-head"><button id="agendaPrevMonth" type="button" aria-label="Mês anterior">←</button><h2 id="agendaMonthTitle"></h2><button id="agendaNextMonth" type="button" aria-label="Próximo mês">→</button></div><div id="agendaCalendarGrid" class="calendar-grid" role="group" aria-label="Selecione um dia"></div><p class="calendar-help">O ponto indica compromissos no status selecionado. Toque no dia para ver os contatos.</p></details>
+   </div>
+   <div class="list-heading"><h2 id="agendaListTitle">Compromissos para hoje</h2><p id="agendaListCount" class="muted"></p></div>
+   <div id="agendaList" aria-live="polite"></div>
+   <p class="bottom-note">Datas e horários de Brasília. Os registros são privados. Abrir o WhatsApp não envia uma mensagem automaticamente.</p>
+  </section>
+ </main>
+</div>
+<dialog id="agendaEditor" aria-labelledby="editorTitle">
+ <div class="editor-head"><div><p class="eyebrow">SEU PRÓXIMO CONTATO</p><h2 id="editorTitle">Novo compromisso</h2></div><button class="icon-button" type="button" id="agendaCloseEditor" aria-label="Fechar formulário">×</button></div>
+ <form id="agendaEditorForm">
+  <div class="editor-fields">
+   <label for="leadName">Nome <span>(opcional)</span></label><input id="leadName" type="text" maxlength="120" autocomplete="off" placeholder="Como você identifica essa pessoa">
+   <label for="leadPhone">Telefone com DDD</label><input id="leadPhone" type="tel" maxlength="32" autocomplete="tel" required placeholder="(11) 99999-9999"><p class="field-help">Outro país? Inclua + e o código do país.</p>
+   <div class="form-pair"><div><label for="leadDate">Data combinada</label><input id="leadDate" type="date" required></div><div><label for="leadTime">Horário <span>(opcional)</span></label><input id="leadTime" type="time"></div></div>
+   <p class="field-help">Registre o dia, o mês e o ano combinados na conversa.</p>
+   <label for="leadStatus">Andamento</label><select id="leadStatus"><option value="pending">Retomar contato</option><option value="contacted">Contato realizado</option><option value="paid">Pago</option><option value="closed">Encerrado</option></select>
+   <p id="agendaRescheduleHint" class="field-help" hidden>Ao mudar a data, o compromisso volta para “Retomar contato”.</p>
+   <label for="leadNote">Próximo passo / observação <span>(opcional)</span></label><textarea id="leadNote" rows="3" maxlength="1500" placeholder="Ex.: combinou de retornar depois que receber."></textarea>
+   <p id="agendaFormError" class="error" role="alert" hidden></p>
+  </div>
+  <div class="editor-actions"><button class="button secondary" type="button" id="agendaCancelEditor">CANCELAR</button><button class="button primary" id="agendaSave" type="submit">SALVAR COMPROMISSO</button></div>
+ </form>
+</dialog>
+</body>
+</html>

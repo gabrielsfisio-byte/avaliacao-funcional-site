@@ -82,6 +82,54 @@ horários livres, informa o telefone, e o horário sai da lista de disponíveis
 automaticamente (evitando que duas pessoas peguem o mesmo horário). Você acompanha tudo
 isso no mesmo card, com o nome e telefone de quem agendou.
 
+## Compromissos dos leads (agenda privada)
+
+No painel do profissional, abra **ABRIR AGENDA DOS LEADS**. Essa área organiza
+os contatos que combinaram uma data para retomar a conversa ou se programar.
+Ela é independente dos horários de teleconsulta e dos questionários dos pacientes.
+
+### Ativar uma vez no Supabase
+
+1. Abra **o mesmo projeto** que já atende este sistema.
+2. Vá a **SQL Editor → New query**.
+3. Cole o conteúdo de [`supabase-agenda-leads.sql`](supabase-agenda-leads.sql)
+   e execute **Run**.
+4. Publique os arquivos novos `agenda.html`, `agenda.js` e `agenda.css`, junto
+   com a atualização de `app.js`. A configuração existente em `config.js` continua
+   a mesma. O cadastro de pacientes e a agenda de teleconsultas não são alterados.
+
+O novo SQL cria somente a tabela `lead_commitments`, com validações e acesso
+por proprietário. Não é necessário executar novamente o antigo `supabase-setup.sql`
+para instalar a agenda dos leads. Não desative a proteção de acesso para corrigir
+um erro de configuração.
+
+### No dia a dia
+
+- Cadastre **telefone e data completa** combinada; nome, horário e observação
+  são opcionais. Se o lead informou só “dia 30”, confirme o mês e o ano na conversa.
+- Consulte **Hoje**, **Atrasados**, **Próximos** ou **Todos**, e pesquise pelo nome
+  ou por parte do telefone. O calendário ajuda a consultar uma data específica.
+- Abra o WhatsApp a partir do telefone para localizar a conversa. O sistema não
+  envia mensagens sozinho.
+- Marque contato realizado, pagamento confirmado ou encerrado; edite a data
+  quando combinar um novo retorno. O status de pagamento é um registro manual,
+  sem consulta à API de pagamentos.
+- A agenda usa as datas e os horários de Brasília. Ela mostra pendências quando
+  você abre a página; não dispara notificações em segundo plano.
+
+Os contatos são gravados no Supabase depois de confirmar o salvamento e ficam
+disponíveis nos aparelhos em que você entrar com o mesmo acesso. A agenda não
+salva uma cópia dos leads no armazenamento local do navegador. Sem conexão ou
+com a tabela ainda ausente, a página informa a falha em vez de afirmar que salvou.
+
+O cadastro é **manual**. As datas escolhidas na landing page continuam somente
+na mensagem revisável do WhatsApp; este módulo não as importa automaticamente.
+
+A proteção usa [políticas de acesso por linha do Supabase](https://supabase.com/docs/guides/database/postgres/row-level-security):
+somente o usuário autenticado que criou um compromisso pode acessar esse registro.
+O script não abre consultas da agenda para visitantes sem login e não coloca
+telefones nos arquivos publicados no GitHub.
+
 ## Segurança dos dados
 
 - A tabela `submissions` tem Row Level Security ativado: qualquer pessoa pode criar/atualizar
